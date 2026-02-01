@@ -17,6 +17,7 @@ export interface ReminderItem {
     kanbanStatus?: string;  // 任务类型：长期、短期或进行中
     customReminderTime?: string; // 自定义提醒时间 HH:MM，可选
     url?: string;        // 网页链接，可选
+    assigneeId?: string; // 责任人ID，可选
 }
 
 export interface ReminderData {

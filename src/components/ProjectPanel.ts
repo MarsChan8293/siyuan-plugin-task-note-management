@@ -6,15 +6,18 @@ import { TaskStatsView } from "./TaskStatsView";
 import { getBlockByID, openBlock } from "../api";
 import { PROJECT_KANBAN_TAB_TYPE } from "../index";
 import { ProjectManager } from "../utils/projectManager";
+import { PersonManager } from "../utils/personManager";
 import { compareDateStrings, getLogicalDateString } from "../utils/dateUtils";
 import { CategoryManager } from "../utils/categoryManager";
 import { StatusManager } from "../utils/statusManager";
 import { ProjectDialog } from "./ProjectDialog";
 import { CategoryManageDialog } from "./CategoryManageDialog";
 import { StatusManageDialog } from "./StatusManageDialog";
+import { PersonManageDialog } from "./PersonManageDialog";
 import { ProjectKanbanView } from "./ProjectKanbanView";
 import { BlockBindingDialog } from "./BlockBindingDialog";
 import { i18n } from "../pluginInstance";
+import { createAssigneeElement } from "../utils/uiHelpers";
 import { getAllReminders } from "../utils/icsSubscription";
 
 
@@ -35,6 +38,7 @@ export class ProjectPanel {
     private showOnlyWithDoingTasks: boolean = false;
     private categoryManager: CategoryManager;
     private statusManager: StatusManager;
+    private personManager: PersonManager;
     private projectUpdatedHandler: () => void;
     private reminderUpdatedHandler: (e: any) => void;
     // 添加拖拽相关属性
@@ -52,6 +56,7 @@ export class ProjectPanel {
         this.plugin = plugin;
         this.categoryManager = CategoryManager.getInstance(this.plugin);
         this.statusManager = StatusManager.getInstance(this.plugin);
+        this.personManager = PersonManager.getInstance(this.plugin);
 
         this.projectUpdatedHandler = () => {
             this.loadProjects();
@@ -792,6 +797,15 @@ export class ProjectPanel {
         const infoEl = document.createElement('div');
         infoEl.className = 'project-item__info';
 
+        // 标题和责任人容器
+        const titleAssigneeContainer = document.createElement('div');
+        titleAssigneeContainer.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        `;
+
         // 标题
         const titleEl = document.createElement('span');
         titleEl.className = 'project-item__title';
@@ -815,6 +829,27 @@ export class ProjectPanel {
                 font-weight: 500;
             `;
         }
+
+        // 将标题添加到容器
+        titleAssigneeContainer.appendChild(titleEl);
+
+        // 责任人
+        const assigneeEl = createAssigneeElement(this.personManager, project.assigneeId);
+        if (assigneeEl) {
+            assigneeEl.className = 'project-item__assignee';
+            assigneeEl.style.cssText = `
+                font-size: 12px;
+                color: var(--b3-theme-on-surface-light);
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                margin-left: auto;
+            `;
+            titleAssigneeContainer.appendChild(assigneeEl);
+        }
+
+        // 将标题和责任人容器添加到信息容器
+        infoEl.appendChild(titleAssigneeContainer);
 
         // 时间信息容器
         const timeContainer = document.createElement('div');
@@ -862,7 +897,6 @@ export class ProjectPanel {
             timeContainer.appendChild(priorityLabel);
         }
 
-        infoEl.appendChild(titleEl);
         infoEl.appendChild(timeContainer);
 
         // 添加状态标签
@@ -2225,6 +2259,13 @@ export class ProjectPanel {
         statusDialog.show();
     }
 
+    private showPersonManageDialog() {
+        const personDialog = new PersonManageDialog(this.plugin, () => {
+            // 责任人更新后可以添加刷新逻辑（如果需要）
+        });
+        personDialog.show();
+    }
+
     private openProjectKanban(project: any) {
         try {
             // 打开项目看板Tab
@@ -2304,6 +2345,15 @@ export class ProjectPanel {
                 label: i18n("manageStatuses") || "管理状态",
                 click: () => {
                     this.showStatusManageDialog();
+                }
+            });
+
+            // 添加责任人管理
+            menu.addItem({
+                icon: 'iconUser',
+                label: i18n("personManagement") || "责任人管理",
+                click: () => {
+                    this.showPersonManageDialog();
                 }
             });
 

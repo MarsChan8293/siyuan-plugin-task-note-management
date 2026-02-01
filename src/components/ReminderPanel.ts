@@ -5,8 +5,11 @@ import { loadSortConfig, saveSortConfig, getSortMethodName } from "../utils/sort
 import { QuickReminderDialog } from "./QuickReminderDialog";
 import { CategoryManager } from "../utils/categoryManager";
 import { CategoryManageDialog } from "./CategoryManageDialog";
+import { PersonManageDialog } from "./PersonManageDialog";
+import { PersonManager } from "../utils/personManager";
 import { BlockBindingDialog } from "./BlockBindingDialog";
 import { i18n } from "../pluginInstance";
+import { createAssigneeElement } from "../utils/uiHelpers";
 import { generateRepeatInstances, getRepeatDescription, getDaysDifference, addDaysToDate } from "../utils/repeatUtils";
 import { PomodoroTimer } from "./PomodoroTimer";
 import { PomodoroStatsView, getLastStatsMode } from "./PomodoroStatsView";
@@ -35,6 +38,7 @@ export class ReminderPanel {
     private reminderUpdatedHandler: (event?: CustomEvent) => void;
     private sortConfigUpdatedHandler: (event: CustomEvent) => void;
     private categoryManager: CategoryManager; // 添加分类管理器
+    private personManager: PersonManager; // 添加责任人管理器
     private isDragging: boolean = false;
     private draggedElement: HTMLElement | null = null;
     private draggedReminder: any = null;
@@ -73,6 +77,7 @@ export class ReminderPanel {
         // 唯一 ID，用于标记由本面板发出的全局事件，避免自身响应
         this.panelId = `ReminderPanel_${Date.now()}_${Math.random().toString(36).slice(2)}`;
         this.categoryManager = CategoryManager.getInstance(this.plugin); // 初始化分类管理器
+        this.personManager = PersonManager.getInstance(this.plugin); // 初始化责任人管理器
         this.pomodoroRecordManager = PomodoroRecordManager.getInstance(this.plugin); // Initialization
 
         // 创建事件处理器（忽略由本 panel 发出的事件）
@@ -652,6 +657,14 @@ export class ReminderPanel {
         });
         categoryDialog.show();
     }
+
+    private showPersonManageDialog() {
+        const personDialog = new PersonManageDialog(this.plugin, () => {
+            // 责任人更新后可以添加刷新逻辑（如果需要）
+        });
+        personDialog.show();
+    }
+
 
 
 
@@ -2020,6 +2033,12 @@ export class ReminderPanel {
 
         const titleContainer = document.createElement('div');
         titleContainer.className = 'reminder-item__title-container';
+        titleContainer.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        `;
 
         if (reminder.docId && reminder.blockId !== reminder.docId) {
             this.addDocumentTitle(titleContainer, reminder.docId);
@@ -2058,6 +2077,21 @@ export class ReminderPanel {
                 e.stopPropagation();
             });
             titleContainer.appendChild(urlIcon);
+        }
+
+        // 责任人
+        const assigneeEl = createAssigneeElement(this.personManager, reminder.assigneeId);
+        if (assigneeEl) {
+            assigneeEl.className = 'reminder-item__assignee';
+            assigneeEl.style.cssText = `
+                font-size: 12px;
+                color: var(--b3-theme-on-surface-light);
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                margin-left: auto;
+            `;
+            titleContainer.appendChild(assigneeEl);
         }
 
         const timeContainer = document.createElement('div');
@@ -7647,6 +7681,13 @@ export class ReminderPanel {
                 icon: 'iconTags',
                 label: i18n("manageCategories") || "管理分类",
                 click: () => this.showCategoryManageDialog()
+            });
+
+            // 添加责任人管理
+            menu.addItem({
+                icon: 'iconUser',
+                label: i18n("personManagement") || "责任人管理",
+                click: () => this.showPersonManageDialog()
             });
 
             // 显示菜单

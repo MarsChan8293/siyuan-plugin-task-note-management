@@ -1085,5 +1085,21 @@
     "confirmDeletePomodoro": "确定要删除这个番茄钟记录吗？",
     "pleaseEnterValidInfo": "请输入有效信息",
     "batchSetReminders": "批量设置任务",
-    "selectAllUnfinished": "全选未完成"
+    "selectAllUnfinished": "全选未完成",
+    "personManagement": "责任人管理",
+    "addPerson": "添加责任人",
+    "editPerson": "编辑责任人",
+    "deletePerson": "删除责任人",
+    "personName": "责任人姓名",
+    "assignee": "责任人",
+    "selectAssignee": "选择责任人",
+    "noAssignee": "无责任人",
+    "personCreatedSuccessfully": "责任人创建成功",
+    "personUpdatedSuccessfully": "责任人更新成功",
+    "personDeletedSuccessfully": "责任人删除成功",
+    "personNameRequired": "责任人姓名不能为空",
+    "confirmDeletePerson": "确定要删除此责任人吗？",
+    "personInUseWarning": "该责任人已被分配给{0}个任务和{1}个项目，请先解除分配。",
+    "noPersons": "暂无责任人",
+    "clickAddPerson": "点击上方按钮添加责任人"
 }

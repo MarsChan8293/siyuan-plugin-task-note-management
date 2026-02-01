@@ -40,6 +40,7 @@ export const POMODORO_RECORD_DATA_FILE = "pomodoro_record.json";
 export const HABIT_GROUP_DATA_FILE = "habitGroup.json";
 export const STATUSES_DATA_FILE = "statuses.json";
 export const HOLIDAY_DATA_FILE = "holiday.json";
+export const PERSONS_DATA_FILE = "persons.json";
 
 export { exportIcsFile, uploadIcsToCloud };
 
@@ -153,9 +154,10 @@ export const DEFAULT_SETTINGS = {
 
 export default class ReminderPlugin extends Plugin {
     private reminderPanel: ReminderPanel;
-    private tabViews: Map<string, any> = new Map(); // 存储所有Tab视图实例（日历、四象限、项目看板、番茄钟等）
+    private tabViews: Map<string, any> = new Map();
     private categoryManager: CategoryManager;
     private settingUtils: SettingUtils;
+    private personManager: any;
     private chronoParser: any;
     private batchReminderDialog: BatchReminderDialog;
     private audioEnabled: boolean = false;
@@ -187,6 +189,7 @@ export default class ReminderPlugin extends Plugin {
     private subscriptionTasksCache: { [id: string]: any } = {};
     private holidayDataCache: any = null;
     private pomodoroRecordsCache: any = null;
+    private personsDataCache: any = null;
     private outlinePrefixCache: Map<string, string> = new Map(); // 记录由本插件管理的大纲前缀
     private protyleObservers: WeakMap<Element, MutationObserver> = new WeakMap();
     private protyleDebounceTimers: WeakMap<Element, number> = new WeakMap();
@@ -410,6 +413,32 @@ export default class ReminderPlugin extends Plugin {
     }
 
     /**
+     * 加载责任人数据，支持缓存
+     * @param update 是否强制更新（从文件读取）
+     */
+    public async loadPersonsData(update: boolean = false): Promise<any> {
+        if (update || !this.personsDataCache) {
+            try {
+                const data = await this.loadData(PERSONS_DATA_FILE);
+                this.personsDataCache = data && Array.isArray(data) ? data : [];
+            } catch (error) {
+                console.error('Failed to load persons data:', error);
+                this.personsDataCache = [];
+            }
+        }
+        return this.personsDataCache;
+    }
+
+    /**
+     * 保存责任人数据，并更新缓存
+     * @param data 责任人数据
+     */
+    public async savePersonsData(data: any): Promise<void> {
+        this.personsDataCache = data;
+        await this.saveData(PERSONS_DATA_FILE, data);
+    }
+
+    /**
      * 加载订阅数据，支持缓存
      * @param update 是否强制更新（从文件读取）
      */
@@ -518,6 +547,10 @@ export default class ReminderPlugin extends Plugin {
 
         this.categoryManager = CategoryManager.getInstance(this);
         await this.categoryManager.initialize();
+
+        const { PersonManager } = await import("./utils/personManager");
+        this.personManager = PersonManager.getInstance(this);
+        await this.personManager.initialize();
 
 
         // 添加用户交互监听器来启用音频

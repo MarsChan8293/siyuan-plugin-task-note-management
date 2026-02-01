@@ -3,7 +3,10 @@ import { getBlockByID } from "../api";
 import { getLogicalDateString } from "../utils/dateUtils";
 import { CategoryManager } from "../utils/categoryManager";
 import { StatusManager } from "../utils/statusManager";
+import { PersonManager } from "../utils/personManager";
+import { PersonSelectDialog } from "./PersonSelectDialog";
 import { i18n } from "../pluginInstance";
+import { updateAssigneeDisplay } from "../utils/assigneeUI";
 
 export class ProjectDialog {
     private dialog: Dialog;
@@ -11,6 +14,8 @@ export class ProjectDialog {
     private selectedCategoryIds: string[] = [];
     private categoryManager: CategoryManager;
     private statusManager: StatusManager;
+    private personManager: PersonManager;
+    private selectedAssigneeId: string | null = null;
     private plugin?: any;
 
     constructor(blockId?: string, plugin?: any) {
@@ -18,6 +23,7 @@ export class ProjectDialog {
         this.plugin = plugin;
         this.categoryManager = CategoryManager.getInstance(this.plugin);
         this.statusManager = StatusManager.getInstance(this.plugin);
+        this.personManager = PersonManager.getInstance(this.plugin);
     }
 
     async show() {
@@ -48,6 +54,7 @@ export class ProjectDialog {
 
             this.bindEvents();
             await this.statusManager.initialize();
+            this.selectedAssigneeId = existingProject?.assigneeId || null;
         } catch (error) {
             console.error('显示项目对话框失败:', error);
             showMessage(i18n("openModifyDialogFailed"));
@@ -107,10 +114,28 @@ export class ProjectDialog {
                         <div id="category-selector" class="category-selector" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;">
                             <!-- 分类选择器将在这里渲染 -->
                         </div>
-                    </div>
+                        </div>
                     
-                    <div class="form-group">
-                        <label>${i18n("projectColor") || "项目颜色"}:</label>
+                        <div class="form-group">
+                            <label>${i18n("assignee") || "责任人"}:</label>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <input type="text" id="projectAssigneeInput" class="b3-text-field" 
+                                       placeholder="${i18n("selectAssignee") || "选择责任人"}" 
+                                       value="${this.selectedAssigneeId ? this.personManager.getPersonName(this.selectedAssigneeId) || '' : ''}"
+                                       readonly 
+                                       style="flex: 1; cursor: pointer; background: var(--b3-theme-background-light);">
+                                <button type="button" id="projectSelectAssigneeBtn" class="b3-button b3-button--outline">
+                                    ${i18n("selectAssignee") || "选择责任人"}
+                                </button>
+                                <button type="button" id="projectClearAssigneeBtn" class="b3-button b3-button--outline" 
+                                        style="${!this.selectedAssigneeId ? 'display: none;' : ''}">
+                                    <svg class="b3-button__icon"><use xlink:href="#iconTrashcan"></use></svg>
+                                </button>
+                            </div>
+                        </div>
+                    
+                        <div class="form-group">
+                            <label>${i18n("projectColor") || "项目颜色"}:</label>
                         <input type="color" id="projectColor" class="b3-text-field" value="${existingProject?.color || '#3498db'}" style="width: 100%; height: 40px; cursor: pointer;">
                     </div>
                     
@@ -191,6 +216,23 @@ export class ProjectDialog {
                 console.error('读取剪贴板失败:', error);
                 showMessage(i18n("pasteBlockRefFailed") || "粘贴失败");
             }
+        });
+ 
+        // 责任人选择和清除按钮
+        const selectAssigneeBtn = this.dialog.element.querySelector('#projectSelectAssigneeBtn') as HTMLButtonElement;
+        const clearAssigneeBtn = this.dialog.element.querySelector('#projectClearAssigneeBtn') as HTMLButtonElement;
+
+        selectAssigneeBtn?.addEventListener('click', () => {
+            const personSelectDialog = new PersonSelectDialog(this.plugin, this.selectedAssigneeId, (personId) => {
+                this.selectedAssigneeId = personId;
+                this.updateAssigneeDisplay();
+            });
+            personSelectDialog.show();
+        });
+
+        clearAssigneeBtn?.addEventListener('click', () => {
+            this.selectedAssigneeId = null;
+            this.updateAssigneeDisplay();
         });
 
         // 回车键保存
@@ -299,6 +341,16 @@ export class ProjectDialog {
         return null;
     }
 
+    private updateAssigneeDisplay() {
+        updateAssigneeDisplay(
+            this.dialog.element,
+            this.selectedAssigneeId,
+            this.personManager,
+            'projectAssigneeInput',
+            'projectClearAssigneeBtn'
+        );
+    }
+
     private async saveProject() {
         try {
             const titleEl = this.dialog.element.querySelector('#projectTitle') as HTMLInputElement;
@@ -347,6 +399,7 @@ export class ProjectDialog {
                 color: colorEl.value,
                 startDate: startDate,
                 endDate: endDate || null,
+                assigneeId: this.selectedAssigneeId || undefined,
                 // 保持向后兼容
                 archived: statusEl.value === 'archived',
                 updatedTime: new Date().toISOString(),
