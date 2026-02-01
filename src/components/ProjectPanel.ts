@@ -26,12 +26,14 @@ export class ProjectPanel {
     private projectsContainer: HTMLElement;
     private filterSelect: HTMLSelectElement;
     private categoryFilterButton: HTMLButtonElement;
+    private assigneeFilterButton: HTMLButtonElement;
     private sortButton: HTMLButtonElement;
     private searchInput: HTMLInputElement;
     private showOnlyWithDoingCheckbox: HTMLInputElement;
     private plugin: any;
     private currentTab: string = 'all';
     private selectedCategories: string[] = [];
+    private selectedAssigneeIds: string[] = [];
     private currentSort: string = 'priority';
     private currentSortOrder: 'asc' | 'desc' = 'desc';
     private currentSearchQuery: string = '';
@@ -273,7 +275,22 @@ export class ProjectPanel {
         this.categoryFilterButton.addEventListener('click', () => this.showCategorySelectDialog());
         controls.appendChild(this.categoryFilterButton);
 
-        // 添加"只显示进行中>0"复选框
+        this.assigneeFilterButton = document.createElement('button');
+        this.assigneeFilterButton.className = 'b3-button b3-button--outline';
+        this.assigneeFilterButton.style.cssText = `
+            display: inline-block;
+            max-width: 200px;
+            box-sizing: border-box;
+            padding: 0 8px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            vertical-align: middle;
+            text-align: left;
+        `;
+        this.assigneeFilterButton.addEventListener('click', () => this.showAssigneeSelectDialog());
+        controls.appendChild(this.assigneeFilterButton);
+
         const doingFilterContainer = document.createElement('label');
         doingFilterContainer.className = 'b3-label';
         doingFilterContainer.style.cssText = `
@@ -339,8 +356,8 @@ export class ProjectPanel {
         this.projectsContainer.className = 'project-list';
         this.container.appendChild(this.projectsContainer);
 
-        // 渲染分类过滤器
         this.updateCategoryFilterButtonText();
+        this.updateAssigneeFilterButtonText();
         this.updateSortButtonTitle();
     }
 
@@ -373,7 +390,6 @@ export class ProjectPanel {
         if (this.selectedCategories.length === 0 || this.selectedCategories.includes('all')) {
             this.categoryFilterButton.textContent = i18n("categoryFilter") || "分类筛选";
         } else {
-            // 显示选中的分类名称
             const names = this.selectedCategories.map(id => {
                 if (id === 'none') return i18n("noCategory") || "无分类";
                 const cat = this.categoryManager.getCategoryById(id);
@@ -381,6 +397,111 @@ export class ProjectPanel {
             });
             this.categoryFilterButton.textContent = names.join(', ');
         }
+    }
+
+    private updateAssigneeFilterButtonText() {
+        if (!this.assigneeFilterButton) return;
+
+        if (this.selectedAssigneeIds.length === 0 || this.selectedAssigneeIds.includes('all')) {
+            this.assigneeFilterButton.textContent = i18n("assigneeFilter") || "责任人筛选";
+        } else {
+            const names = this.selectedAssigneeIds.map(id => {
+                if (id === 'none') return i18n("noAssignee") || "无责任人";
+                const person = this.personManager.getPersonById(id);
+                return person ? person.name : id;
+            });
+            this.assigneeFilterButton.textContent = names.join(', ');
+        }
+    }
+
+    private async showAssigneeSelectDialog() {
+        const persons = this.personManager.getPersons();
+
+        const dialog = new Dialog({
+            title: i18n("selectAssignees") || "选择责任人",
+            content: this.createAssigneeSelectContent(persons),
+            width: "400px",
+            height: "250px"
+        });
+
+        const confirmBtn = dialog.element.querySelector('#assigneeSelectConfirm') as HTMLButtonElement;
+        const cancelBtn = dialog.element.querySelector('#assigneeSelectCancel') as HTMLButtonElement;
+        const allCheckbox = dialog.element.querySelector('#assigneeAll') as HTMLInputElement;
+        const checkboxes = dialog.element.querySelectorAll('.assignee-checkbox') as NodeListOf<HTMLInputElement>;
+
+        allCheckbox.addEventListener('change', () => {
+            if (allCheckbox.checked) {
+                checkboxes.forEach(cb => cb.checked = false);
+            }
+        });
+
+        checkboxes.forEach(cb => {
+            cb.addEventListener('change', () => {
+                if (cb.checked) {
+                    allCheckbox.checked = false;
+                }
+            });
+        });
+
+        confirmBtn.addEventListener('click', () => {
+            const selected = [];
+            if (allCheckbox.checked) {
+                selected.push('all');
+            } else {
+                checkboxes.forEach(cb => {
+                    if (cb.checked) {
+                        selected.push(cb.value);
+                    }
+                });
+            }
+            this.selectedAssigneeIds = selected;
+            this.updateAssigneeFilterButtonText();
+            this.loadProjects();
+            dialog.destroy();
+        });
+
+        cancelBtn.addEventListener('click', () => dialog.destroy());
+    }
+
+    private createAssigneeSelectContent(persons: any[]): string {
+        let html = `
+            <div class="assignee-select-dialog">
+                <div class="b3-dialog__content">
+                    <div class="assignee-option">
+                        <label>
+                            <input type="checkbox" id="assigneeAll" value="all" ${this.selectedAssigneeIds.includes('all') || this.selectedAssigneeIds.length === 0 ? 'checked' : ''}>
+                            ${i18n("allAssignees") || "全部责任人"}
+                        </label>
+                    </div>
+                    <div class="assignee-option">
+                        <label>
+                            <input type="checkbox" class="assignee-checkbox" value="none" ${this.selectedAssigneeIds.includes('none') ? 'checked' : ''}>
+                            ${i18n("noAssignee") || "无责任人"}
+                        </label>
+                    </div>
+        `;
+
+        persons.forEach(person => {
+            html += `
+                <div class="assignee-option">
+                    <label>
+                        <input type="checkbox" class="assignee-checkbox" value="${person.id}" ${this.selectedAssigneeIds.includes(person.id) ? 'checked' : ''}>
+                        ${person.name}
+                    </label>
+                </div>
+            `;
+        });
+
+        html += `
+                </div>
+                <div class="b3-dialog__action">
+                    <button class="b3-button b3-button--cancel" id="assigneeSelectCancel">${i18n("cancel")}</button>
+                    <button class="b3-button b3-button--primary" id="assigneeSelectConfirm">${i18n("confirm")}</button>
+                </div>
+            </div>
+        `;
+
+        return html;
     }
 
     private updateSortButtonTitle() {
@@ -492,8 +613,8 @@ export class ProjectPanel {
 
             // 应用分类过滤
             let filteredProjects = this.applyCategoryFilter(projects);
+            filteredProjects = this.applyAssigneeFilter(filteredProjects);
 
-            // 应用搜索过滤
             if (this.currentSearchQuery) {
                 filteredProjects = this.applySearchFilter(filteredProjects);
             }
@@ -549,8 +670,18 @@ export class ProjectPanel {
         return projects.filter(project => {
             const categoryIds = project.categoryId ? project.categoryId.split(',').filter((id: string) => id.trim()) : ['none'];
             if (categoryIds.length === 0) categoryIds.push('none');
-            // Check if any of the project's categories are in the selected categories list
             return categoryIds.some((id: string) => this.selectedCategories.includes(id));
+        });
+    }
+
+    private applyAssigneeFilter(projects: any[]): any[] {
+        if (this.selectedAssigneeIds.length === 0 || this.selectedAssigneeIds.includes('all')) {
+            return projects;
+        }
+
+        return projects.filter(project => {
+            const assigneeId = project.assigneeId || 'none';
+            return this.selectedAssigneeIds.includes(assigneeId);
         });
     }
 
