@@ -5,6 +5,7 @@ import { i18n } from "../pluginInstance";
 import { getLocalDateString, getLocalDateTimeString, compareDateStrings, getLogicalDateString, getRelativeDateString } from "../utils/dateUtils";
 import { CategoryManager } from "../utils/categoryManager";
 import { ProjectManager } from "../utils/projectManager";
+import { PersonManager } from "../utils/personManager";
 import { PomodoroTimer } from "./PomodoroTimer";
 import { PomodoroManager } from "../utils/pomodoroManager";
 import { PomodoroRecordManager } from "../utils/pomodoroRecord"; // Add import
@@ -13,6 +14,7 @@ import { getSolarDateLunarString } from "../utils/lunarUtils";
 import { QuickReminderDialog } from "./QuickReminderDialog";
 import { BlockBindingDialog } from "./BlockBindingDialog";
 import { getAllReminders, saveReminders } from '../utils/icsSubscription';
+import { createAssigneeElement } from "../utils/uiHelpers";
 
 import { PasteTaskDialog } from "./PasteTaskDialog";
 
@@ -23,6 +25,7 @@ export class ProjectKanbanView {
     private project: any;
     private categoryManager: CategoryManager;
     private projectManager: ProjectManager;
+    private personManager: PersonManager;
     private currentSort: string = 'priority';
     private kanbanMode: 'status' | 'custom' | 'list' = 'status';
     private currentSortOrder: 'asc' | 'desc' = 'desc';
@@ -136,6 +139,7 @@ export class ProjectKanbanView {
         this.projectId = projectId;
         this.categoryManager = CategoryManager.getInstance(this.plugin);
         this.projectManager = ProjectManager.getInstance(this.plugin);
+        this.personManager = PersonManager.getInstance(this.plugin);
         this.initializeAsync();
     }
 
@@ -1976,6 +1980,22 @@ export class ProjectKanbanView {
                 }
 
                 titleContainer.appendChild(titleEl);
+
+                // 责任人
+                const assigneeEl = createAssigneeElement(this.personManager, task.assigneeId);
+                if (assigneeEl) {
+                    assigneeEl.className = 'kanban-task-assignee';
+                    assigneeEl.style.cssText = `
+                        font-size: 12px;
+                        color: var(--b3-theme-on-surface-light);
+                        display: flex;
+                        align-items: center;
+                        gap: 4px;
+                        margin-left: auto;
+                    `;
+                    titleContainer.appendChild(assigneeEl);
+                }
+
                 taskContentContainer.appendChild(titleContainer);
 
                 // 任务信息容器 - 包含优先级、日期等
@@ -7965,6 +7985,21 @@ export class ProjectKanbanView {
                 e.stopPropagation();
             });
             titleContainer.appendChild(urlIcon);
+        }
+
+        // 责任人
+        const assigneeEl = createAssigneeElement(this.personManager, task.assigneeId);
+        if (assigneeEl) {
+            assigneeEl.className = 'kanban-task-assignee';
+            assigneeEl.style.cssText = `
+                font-size: 12px;
+                color: var(--b3-theme-on-surface-light);
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                margin-left: auto;
+            `;
+            titleContainer.appendChild(assigneeEl);
         }
 
         taskContentContainer.appendChild(titleContainer);

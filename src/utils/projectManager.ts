@@ -33,6 +33,7 @@ export interface Project {
     sortRule?: string;
     sortOrder?: 'asc' | 'desc';
     milestones?: Milestone[];
+    assigneeId?: string;
 }
 
 /**

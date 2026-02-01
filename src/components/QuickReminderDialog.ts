@@ -3,6 +3,7 @@ import { getBlockByID, getBlockDOM, refreshSql, updateBindBlockAtrrs } from "../
 import { compareDateStrings, getLogicalDateString, parseNaturalDateTime, autoDetectDateTimeFromTitle } from "../utils/dateUtils";
 import { CategoryManager } from "../utils/categoryManager";
 import { ProjectManager } from "../utils/projectManager";
+import { PersonManager } from "../utils/personManager";
 import { i18n } from "../pluginInstance";
 import { RepeatSettingsDialog, RepeatConfig } from "./RepeatSettingsDialog";
 import { getRepeatDescription } from "../utils/repeatUtils";
@@ -11,6 +12,8 @@ import { BlockBindingDialog } from "./BlockBindingDialog";
 import { SubtasksDialog } from "./SubtasksDialog";
 import { PomodoroRecordManager } from "../utils/pomodoroRecord";
 import { PomodoroSessionsDialog } from "./PomodoroSessionsDialog";
+import { PersonSelectDialog } from "./PersonSelectDialog";
+import { updateAssigneeDisplay } from "../utils/assigneeUI";
 
 export class QuickReminderDialog {
     private dialog: Dialog;
@@ -26,6 +29,8 @@ export class QuickReminderDialog {
     private categoryManager: CategoryManager;
     private projectManager: ProjectManager;
     private pomodoroRecordManager: PomodoroRecordManager;
+    private personManager: PersonManager;
+    private selectedAssigneeId: string | null = null;
     private autoDetectDateTime?: boolean; // 是否自动识别日期时间（undefined 表示未指定，使用插件设置）
     private defaultProjectId?: string;
     private showKanbanStatus?: 'todo' | 'term' | 'none' = 'term'; // 看板状态显示模式，默认为 'term'
@@ -86,6 +91,7 @@ export class QuickReminderDialog {
             isInstanceEdit?: boolean;
             instanceDate?: string;
             defaultSort?: number;
+            defaultAssigneeId?: string;
         }
     ) {
         this.initialDate = date;
@@ -120,6 +126,7 @@ export class QuickReminderDialog {
             this.isInstanceEdit = options.isInstanceEdit || false;
             this.instanceDate = options.instanceDate;
             this.defaultSort = options.defaultSort;
+            this.selectedAssigneeId = options.defaultAssigneeId || options.reminder?.assigneeId || null;
         }
 
         // 如果是编辑模式，确保有reminder
@@ -140,6 +147,7 @@ export class QuickReminderDialog {
         this.categoryManager = CategoryManager.getInstance(this.plugin);
         this.projectManager = ProjectManager.getInstance(this.plugin);
         this.pomodoroRecordManager = PomodoroRecordManager.getInstance(this.plugin);
+        this.personManager = PersonManager.getInstance(this.plugin);
         this.repeatConfig = this.reminder?.repeat || {
             enabled: false,
             type: 'daily',
@@ -1048,6 +1056,23 @@ export class QuickReminderDialog {
                                 <option value="">${i18n("noMilestone") || "无里程碑"}</option>
                                 <!-- 里程碑选择器将在这里渲染 -->
                             </select>
+                        </div>
+                        <div class="b3-form__group">
+                            <label class="b3-form__label">${i18n("assignee")}</label>
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <input type="text" id="quickAssigneeInput" class="b3-text-field" 
+                                       placeholder="${i18n("selectAssignee")}" 
+                                       value="${this.selectedAssigneeId ? this.personManager.getPersonName(this.selectedAssigneeId) || '' : ''}"
+                                       readonly 
+                                       style="flex: 1; cursor: pointer; background: var(--b3-theme-background-light);">
+                                <button type="button" id="quickSelectAssigneeBtn" class="b3-button b3-button--outline">
+                                    ${i18n("selectAssignee")}
+                                </button>
+                                <button type="button" id="quickClearAssigneeBtn" class="b3-button b3-button--outline" 
+                                        style="${!this.selectedAssigneeId ? 'display: none;' : ''}">
+                                    <svg class="b3-button__icon"><use xlink:href="#iconTrashcan"></use></svg>
+                                </button>
+                            </div>
                         </div>
                         <!-- 任务状态渲染 -->
                         ${this.renderStatusSelector()}
@@ -2026,6 +2051,32 @@ export class QuickReminderDialog {
             }
         });
 
+        // 责任人选择按钮
+        const selectAssigneeBtn = this.dialog.element.querySelector('#quickSelectAssigneeBtn') as HTMLButtonElement;
+        const clearAssigneeBtn = this.dialog.element.querySelector('#quickClearAssigneeBtn') as HTMLButtonElement;
+
+        selectAssigneeBtn?.addEventListener('click', () => {
+            const personSelectDialog = new PersonSelectDialog(this.plugin, this.selectedAssigneeId, (personId) => {
+                this.selectedAssigneeId = personId;
+                this.updateAssigneeDisplay();
+            });
+            personSelectDialog.show();
+        });
+
+        clearAssigneeBtn?.addEventListener('click', () => {
+            this.selectedAssigneeId = null;
+            this.updateAssigneeDisplay();
+        });
+
+        const assigneeInput = this.dialog.element.querySelector('#quickAssigneeInput') as HTMLInputElement;
+        assigneeInput?.addEventListener('click', () => {
+            const personSelectDialog = new PersonSelectDialog(this.plugin, this.selectedAssigneeId, (personId) => {
+                this.selectedAssigneeId = personId;
+                this.updateAssigneeDisplay();
+            });
+            personSelectDialog.show();
+        });
+
         // 规范化 quickBlockInput：当用户直接粘贴 ((id 'title')) 或链接时，自动替换为纯 id 并设置标题
         const quickBlockInput = this.dialog.element.querySelector('#quickBlockInput') as HTMLInputElement;
         if (quickBlockInput) {
@@ -2606,7 +2657,8 @@ export class QuickReminderDialog {
                 quadrant: this.defaultQuadrant,
                 estimatedPomodoroDuration: estimatedPomodoroDuration,
                 isAvailableToday: isAvailableToday,
-                availableStartDate: availableStartDate
+                availableStartDate: availableStartDate,
+                assigneeId: this.selectedAssigneeId || undefined
             };
 
             // 如果有绑定块，尝试获取并设置 docId
@@ -2672,6 +2724,7 @@ export class QuickReminderDialog {
             optimisticReminder.kanbanStatus = kanbanStatus;
             optimisticReminder.isAvailableToday = isAvailableToday;
             optimisticReminder.availableStartDate = availableStartDate;
+            optimisticReminder.assigneeId = this.selectedAssigneeId || undefined;
 
             // 同步 docId 用于 UI 显示
             optimisticReminder.docId = optimisticDocId !== null ? optimisticDocId : (this.reminder?.docId || undefined);
@@ -2706,7 +2759,8 @@ export class QuickReminderDialog {
                 quadrant: this.defaultQuadrant,
                 kanbanStatus: kanbanStatus,
                 reminderTimes: this.customTimes.length > 0 ? [...this.customTimes] : undefined,
-                estimatedPomodoroDuration: estimatedPomodoroDuration
+                estimatedPomodoroDuration: estimatedPomodoroDuration,
+                assigneeId: this.selectedAssigneeId || undefined
             };
 
             if (customReminderPreset) optimisticReminder.customReminderPreset = customReminderPreset;
@@ -2819,6 +2873,7 @@ export class QuickReminderDialog {
 
                         // 设置看板状态
                         reminder.kanbanStatus = kanbanStatus;
+                        reminder.assigneeId = this.selectedAssigneeId || undefined;
                         reminder.updatedAt = new Date().toISOString();
 
                         // 保存完成时间（如果任务已完成）
@@ -3019,7 +3074,8 @@ export class QuickReminderDialog {
                         availableStartDate: availableStartDate,
                         // 旧字段 `customReminderTime` 不再写入，新提醒统一保存到 `reminderTimes`
                         reminderTimes: this.customTimes.length > 0 ? [...this.customTimes] : undefined,
-                        estimatedPomodoroDuration: estimatedPomodoroDuration
+                        estimatedPomodoroDuration: estimatedPomodoroDuration,
+                        assigneeId: this.selectedAssigneeId || undefined
                     };
 
                     // 保存 preset 信息
@@ -3428,5 +3484,15 @@ export class QuickReminderDialog {
             const minutes = String(now.getMinutes()).padStart(2, '0');
             completedTimeInput.value = `${year}-${month}-${day}T${hours}:${minutes}`;
         }
+    }
+
+    private updateAssigneeDisplay() {
+        updateAssigneeDisplay(
+            this.dialog.element,
+            this.selectedAssigneeId,
+            this.personManager,
+            'quickAssigneeInput',
+            'quickClearAssigneeBtn'
+        );
     }
 }

@@ -1016,5 +1016,21 @@
     "deletePomodoroFailed": "Failed to delete pomodoro",
     "confirmDeletePomodoro": "Are you sure you want to delete this pomodoro record?",
     "pleaseEnterValidInfo": "Please enter valid information",
-    "selectAllUnfinished": "Select Unfinished"
+    "selectAllUnfinished": "Select Unfinished",
+    "personManagement": "Person Management",
+    "addPerson": "Add Person",
+    "editPerson": "Edit Person",
+    "deletePerson": "Delete Person",
+    "personName": "Person Name",
+    "assignee": "Assignee",
+    "selectAssignee": "Select Assignee",
+    "noAssignee": "No Assignee",
+    "personCreatedSuccessfully": "Person created successfully",
+    "personUpdatedSuccessfully": "Person updated successfully",
+    "personDeletedSuccessfully": "Person deleted successfully",
+    "personNameRequired": "Person name is required",
+    "confirmDeletePerson": "Are you sure you want to delete this person?",
+    "personInUseWarning": "This person is assigned to {0} task(s) and {1} project(s). Please unassign them first.",
+    "noPersons": "No persons",
+    "clickAddPerson": "Click the button above to add a person"
 }
