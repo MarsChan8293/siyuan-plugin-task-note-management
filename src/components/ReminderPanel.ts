@@ -26,12 +26,14 @@ export class ReminderPanel {
     private remindersContainer: HTMLElement;
     private filterSelect: HTMLSelectElement;
     private categoryFilterButton: HTMLButtonElement;
+    private assigneeFilterButton: HTMLButtonElement;
     private sortButton: HTMLButtonElement;
     private searchInput: HTMLInputElement;
     private plugin: any;
     private currentTab: string = 'today';
-    private currentCategoryFilter: string = 'all'; // 添加当前分类过滤
+    private currentCategoryFilter: string = 'all';
     private selectedCategories: string[] = [];
+    private selectedAssigneeIds: string[] = [];
     private currentSearchQuery: string = '';
     private currentSort: string = 'time';
     private currentSortOrder: 'asc' | 'desc' = 'asc';
@@ -390,6 +392,22 @@ export class ReminderPanel {
         this.categoryFilterButton.addEventListener('click', () => this.showCategorySelectDialog());
         controls.appendChild(this.categoryFilterButton);
 
+        this.assigneeFilterButton = document.createElement('button');
+        this.assigneeFilterButton.className = 'b3-button b3-button--outline';
+        this.assigneeFilterButton.style.cssText = `
+            display: inline-block;
+            max-width: 200px;
+            box-sizing: border-box;
+            padding: 0 8px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            vertical-align: middle;
+            text-align: left;
+        `;
+        this.assigneeFilterButton.addEventListener('click', () => this.showAssigneeSelectDialog());
+        controls.appendChild(this.assigneeFilterButton);
+
         // 添加“显示已完成子任务”开关，仅在“今日任务”筛选时显示
         const showCompletedContainer = document.createElement('label');
         showCompletedContainer.className = 'b3-label';
@@ -480,6 +498,7 @@ export class ReminderPanel {
 
         // 渲染分类过滤器
         this.updateCategoryFilterButtonText();
+        this.updateAssigneeFilterButtonText();
 
         // 初始化排序按钮标题
         this.updateSortButtonTitle();
@@ -649,6 +668,111 @@ export class ReminderPanel {
             });
             this.categoryFilterButton.textContent = names.join(', ');
         }
+    }
+
+    private updateAssigneeFilterButtonText() {
+        if (!this.assigneeFilterButton) return;
+
+        if (this.selectedAssigneeIds.length === 0 || this.selectedAssigneeIds.includes('all')) {
+            this.assigneeFilterButton.textContent = i18n("assigneeFilter") || "责任人筛选";
+        } else {
+            const names = this.selectedAssigneeIds.map(id => {
+                if (id === 'none') return i18n("noAssignee") || "无责任人";
+                const person = this.personManager.getPersonById(id);
+                return person ? person.name : id;
+            });
+            this.assigneeFilterButton.textContent = names.join(', ');
+        }
+    }
+
+    private async showAssigneeSelectDialog() {
+        const persons = this.personManager.getPersons();
+
+        const dialog = new Dialog({
+            title: i18n("selectAssignees") || "选择责任人",
+            content: this.createAssigneeSelectContent(persons),
+            width: "400px",
+            height: "250px"
+        });
+
+        const confirmBtn = dialog.element.querySelector('#assigneeSelectConfirm') as HTMLButtonElement;
+        const cancelBtn = dialog.element.querySelector('#assigneeSelectCancel') as HTMLButtonElement;
+        const allCheckbox = dialog.element.querySelector('#assigneeAll') as HTMLInputElement;
+        const checkboxes = dialog.element.querySelectorAll('.assignee-checkbox') as NodeListOf<HTMLInputElement>;
+
+        allCheckbox.addEventListener('change', () => {
+            if (allCheckbox.checked) {
+                checkboxes.forEach(cb => cb.checked = false);
+            }
+        });
+
+        checkboxes.forEach(cb => {
+            cb.addEventListener('change', () => {
+                if (cb.checked) {
+                    allCheckbox.checked = false;
+                }
+            });
+        });
+
+        confirmBtn.addEventListener('click', () => {
+            const selected = [];
+            if (allCheckbox.checked) {
+                selected.push('all');
+            } else {
+                checkboxes.forEach(cb => {
+                    if (cb.checked) {
+                        selected.push(cb.value);
+                    }
+                });
+            }
+            this.selectedAssigneeIds = selected;
+            this.updateAssigneeFilterButtonText();
+            this.loadReminders();
+            dialog.destroy();
+        });
+
+        cancelBtn.addEventListener('click', () => dialog.destroy());
+    }
+
+    private createAssigneeSelectContent(persons: any[]): string {
+        let html = `
+            <div class="assignee-select-dialog">
+                <div class="b3-dialog__content">
+                    <div class="assignee-option">
+                        <label>
+                            <input type="checkbox" id="assigneeAll" value="all" ${this.selectedAssigneeIds.includes('all') || this.selectedAssigneeIds.length === 0 ? 'checked' : ''}>
+                            ${i18n("allAssignees") || "全部责任人"}
+                        </label>
+                    </div>
+                    <div class="assignee-option">
+                        <label>
+                            <input type="checkbox" class="assignee-checkbox" value="none" ${this.selectedAssigneeIds.includes('none') ? 'checked' : ''}>
+                            ${i18n("noAssignee") || "无责任人"}
+                        </label>
+                    </div>
+        `;
+
+        persons.forEach(person => {
+            html += `
+                <div class="assignee-option">
+                    <label>
+                        <input type="checkbox" class="assignee-checkbox" value="${person.id}" ${this.selectedAssigneeIds.includes(person.id) ? 'checked' : ''}>
+                        ${person.name}
+                    </label>
+                </div>
+            `;
+        });
+
+        html += `
+                </div>
+                <div class="b3-dialog__action">
+                    <button class="b3-button b3-button--cancel" id="assigneeSelectCancel">${i18n("cancel")}</button>
+                    <button class="b3-button b3-button--primary" id="assigneeSelectConfirm">${i18n("confirm")}</button>
+                </div>
+            </div>
+        `;
+
+        return html;
     }
 
     private showCategoryManageDialog() {
@@ -927,6 +1051,17 @@ export class ReminderPanel {
             }
 
             return taskCategoryIds.some((id: string) => this.selectedCategories.includes(id));
+        });
+    }
+
+    private applyAssigneeFilter(reminders: any[]): any[] {
+        if (this.selectedAssigneeIds.length === 0 || this.selectedAssigneeIds.includes('all')) {
+            return reminders;
+        }
+
+        return reminders.filter(reminder => {
+            const assigneeId = reminder.assigneeId || 'none';
+            return this.selectedAssigneeIds.includes(assigneeId);
         });
     }
 
@@ -1463,9 +1598,8 @@ export class ReminderPanel {
 
             // 1. 应用分类过滤
             const categoryFilteredReminders = this.applyCategoryFilter(filteredReminders);
-
-            // 2. 根据当前Tab（日期/状态）进行筛选，得到直接匹配的提醒
-            const directlyMatchingReminders = this.filterRemindersByTab(categoryFilteredReminders, today);
+            const assigneeFilteredReminders = this.applyAssigneeFilter(categoryFilteredReminders);
+            const directlyMatchingReminders = this.filterRemindersByTab(assigneeFilteredReminders, today);
 
             // 3. 实现父/子驱动逻辑
             const idsToRender = new Set<string>();

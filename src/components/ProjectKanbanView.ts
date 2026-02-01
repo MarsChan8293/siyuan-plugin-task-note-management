@@ -110,12 +110,8 @@ export class ProjectKanbanView {
     private batchToolbar: HTMLElement | null = null;
     // 筛选标签集合
     private selectedFilterTags: Set<string> = new Set();
-    // 筛选里程碑集合 (groupId -> Set of milestoneIds)
     private selectedFilterMilestones: Map<string, Set<string>> = new Map();
-    // 每个分组的所有可用里程碑ID (groupId -> Set of all available milestoneIds)
-    private allAvailableMilestones: Map<string, Set<string>> = new Map();
-    private milestoneFilterButton: HTMLButtonElement;
-    private isFilterActive: boolean = false;
+    private selectedFilterAssignees: Set<string> = new Set();
     private selectedDateFilters: Set<string> = new Set();
     private filterButton: HTMLButtonElement;
     // 上一次点击的任务ID（用于Shift多选范围）
@@ -4863,7 +4859,29 @@ export class ProjectKanbanView {
                 this.tasks = this.tasks.filter(t => matchingIds.has(t.id));
             }
 
-            // [NEW] 在应用里程碑过滤之前，统计每个状态/分组下是否“存在”带里程碑的任务
+            if (this.selectedFilterAssignees.size > 0 && !this.selectedFilterAssignees.has('all')) {
+                const matchesAssignee = (t: any) => {
+                    const assigneeId = t.assigneeId || 'none';
+                    return this.selectedFilterAssignees.has(assigneeId);
+                };
+
+                const matchingIds = new Set<string>();
+                const taskMap = new Map(this.tasks.map(t => [t.id, t]));
+
+                this.tasks.forEach(t => {
+                    if (matchesAssignee(t)) {
+                        let current = t;
+                        while (current) {
+                            matchingIds.add(current.id);
+                            current = current.parentId ? taskMap.get(current.parentId) : null;
+                        }
+                    }
+                });
+
+                this.tasks = this.tasks.filter(t => matchingIds.has(t.id));
+            }
+
+            // [NEW] 在应用里程碑过滤之前，统计每个状态/分组下是否"存在"带里程碑的任务
             // 这决定了对应的筛选按钮是否需要显示（即使当前已经被里程碑过滤器过滤掉了部分任务，按钮也应保留以便取消过滤）
             this._statusHasMilestoneTasks.clear();
             this._availableMilestonesInView.clear();
@@ -9899,8 +9917,7 @@ export class ProjectKanbanView {
             menu.appendChild(div);
         };
 
-        // --- Helper to render checkbox item ---
-        const renderItem = (id: string, name: string, type: 'tag' | 'date', color?: string, icon?: string, checked?: boolean, onChange?: (isChecked: boolean) => void) => {
+        const renderItem = (id: string, name: string, type: 'tag' | 'date' | 'assignee', color?: string, icon?: string, checked?: boolean, onChange?: (isChecked: boolean) => void) => {
             const label = document.createElement('label');
             label.style.cssText = 'display: flex; align-items: center; padding: 6px 8px; cursor: pointer; user-select: none; border-radius: 4px; transition: background 0.1s;';
             label.addEventListener('mouseenter', () => label.style.backgroundColor = 'var(--b3-theme-on-surface-light)');
@@ -9908,12 +9925,12 @@ export class ProjectKanbanView {
 
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
-            checkbox.className = 'b3-switch'; // Or standard checkbox
+            checkbox.className = 'b3-switch';
             checkbox.style.cssText = 'margin-right: 8px;';
             checkbox.dataset.type = type;
             if (id) checkbox.dataset.val = id;
 
-            checkbox.checked = checked !== undefined ? checked : (type === 'tag' ? this.selectedFilterTags.has(id) : this.selectedDateFilters.has(id));
+            checkbox.checked = checked !== undefined ? checked : (type === 'tag' ? this.selectedFilterTags.has(id) : type === 'assignee' ? this.selectedFilterAssignees.has(id) : this.selectedDateFilters.has(id));
 
             checkbox.addEventListener('change', () => {
                 if (onChange) {
@@ -9922,6 +9939,9 @@ export class ProjectKanbanView {
                     if (type === 'tag') {
                         if (checkbox.checked) this.selectedFilterTags.add(id);
                         else this.selectedFilterTags.delete(id);
+                    } else if (type === 'assignee') {
+                        if (checkbox.checked) this.selectedFilterAssignees.add(id);
+                        else this.selectedFilterAssignees.delete(id);
                     } else {
                         if (checkbox.checked) this.selectedDateFilters.add(id);
                         else this.selectedDateFilters.delete(id);
@@ -10096,7 +10116,72 @@ export class ProjectKanbanView {
             renderItem(tag.id, tag.name, 'tag', tag.color);
         });
 
-        // 添加到 body 并计算自适应位置
+        const divider2 = document.createElement('div');
+        divider2.style.cssText = 'border-top: 1px solid var(--b3-border-color); margin: 8px 0px;';
+        menu.appendChild(divider2);
+
+        renderSectionTitle(i18n('assignee') || '责任人');
+
+        const persons = this.personManager.getPersons();
+        const allPersonIds = persons.map(p => p.id);
+        allPersonIds.push('none');
+
+        if (!this.isFilterActive) {
+            allPersonIds.forEach(id => this.selectedFilterAssignees.add(id));
+        }
+
+        renderItem('all', i18n('allAssignees') || '全部责任人', 'assignee', undefined, '👥', this.selectedFilterAssignees.size === 0 || this.selectedFilterAssignees.has('all'), (checked) => {
+            if (checked) {
+                this.selectedFilterAssignees.clear();
+                allPersonIds.forEach(id => this.selectedFilterAssignees.add(id));
+                const checkboxes = menu.querySelectorAll('input[data-type="assignee"]') as NodeListOf<HTMLInputElement>;
+                checkboxes.forEach(cb => {
+                    if (cb.dataset.val !== 'all') cb.checked = true;
+                });
+            } else {
+                this.selectedFilterAssignees.clear();
+            }
+            this.queueLoadTasks();
+            this.updateFilterButtonState(allTagIds.length);
+        });
+
+        renderItem('none', i18n('noAssignee') || '无责任人', 'assignee', undefined, '🚫', this.selectedFilterAssignees.has('none'), (checked) => {
+            if (checked) {
+                this.selectedFilterAssignees.add('none');
+                this.selectedFilterAssignees.delete('all');
+                const allCb = menu.querySelector('input[data-val="all"]') as HTMLInputElement;
+                if (allCb) allCb.checked = false;
+            } else {
+                this.selectedFilterAssignees.delete('none');
+                if (this.selectedFilterAssignees.size === 0) {
+                    const allCb = menu.querySelector('input[data-val="all"]') as HTMLInputElement;
+                    if (allCb) allCb.checked = true;
+                }
+            }
+            this.queueLoadTasks();
+            this.updateFilterButtonState(allTagIds.length);
+        });
+
+        persons.forEach(person => {
+            renderItem(person.id, person.name, 'assignee', undefined, '👤', this.selectedFilterAssignees.has(person.id), (checked) => {
+                if (checked) {
+                    this.selectedFilterAssignees.add(person.id);
+                    this.selectedFilterAssignees.delete('all');
+                    const allCb = menu.querySelector('input[data-val="all"]') as HTMLInputElement;
+                    if (allCb) allCb.checked = false;
+                } else {
+                    this.selectedFilterAssignees.delete(person.id);
+                    if (this.selectedFilterAssignees.size === 0) {
+                        const allCb = menu.querySelector('input[data-val="all"]') as HTMLInputElement;
+                        if (allCb) allCb.checked = true;
+                    }
+                }
+                this.queueLoadTasks();
+                this.updateFilterButtonState(allTagIds.length);
+            });
+        });
+
+        document.body.appendChild(menu);
         document.body.appendChild(menu);
 
         // 计算自适应位置，防止超出屏幕
@@ -10130,13 +10215,10 @@ export class ProjectKanbanView {
     }
 
     private updateFilterButtonState(totalTagCount: number) {
-        // Tag filter active if not all tags selected (assuming default is all selected)
-        // Actually, logic is: user customized filter.
-        // My logic: if selectedFilterTags.size != totalTagCount (including no_tag) OR selectedDateFilters.size > 0
         const isTagFiltered = this.selectedFilterTags.size !== totalTagCount;
         const isDateFiltered = this.selectedDateFilters.size > 0 && !this.selectedDateFilters.has('all');
 
-        if (isTagFiltered || isDateFiltered) {
+        if (isTagFiltered || isDateFiltered || isAssigneeFiltered) {
             this.filterButton.classList.add('b3-button--primary');
             this.filterButton.classList.remove('b3-button--outline');
         } else {

@@ -25,6 +25,7 @@ import { DocumentReminderDialog } from "./components/DocumentReminderDialog";
 import { ProjectDialog } from "./components/ProjectDialog";
 import { ProjectPanel } from "./components/ProjectPanel";
 import { ProjectKanbanView } from "./components/ProjectKanbanView";
+import { PersonKanbanView } from "./components/PersonKanbanView";
 import { PomodoroManager } from "./utils/pomodoroManager";
 import SettingPanelComponent from "./SettingPanel.svelte";
 import { exportIcsFile, uploadIcsToCloud } from "./utils/icsUtils";
@@ -49,7 +50,8 @@ export { exportIcsFile, uploadIcsToCloud };
 const TAB_TYPE = "reminder_calendar_tab";
 const EISENHOWER_TAB_TYPE = "reminder_eisenhower_tab";
 export const PROJECT_KANBAN_TAB_TYPE = "project_kanban_tab";
-const POMODORO_TAB_TYPE = "pomodoro_timer_tab";
+export const PERSON_KANBAN_TAB_TYPE = "person_kanban_tab";
+export const POMODORO_TAB_TYPE = "pomodoro_timer_tab";
 export const STORAGE_NAME = "siyuan-plugin-task-note-management";
 
 
@@ -1022,7 +1024,14 @@ export default class ReminderPlugin extends Plugin {
             }) as any
         });
 
-        // 注册番茄钟标签页
+        this.addTab({
+            type: PERSON_KANBAN_TAB_TYPE,
+            init: ((tab) => {
+                const personKanbanView = new PersonKanbanView(tab.element, this);
+                this.tabViews.set(tab.id, personKanbanView);
+            }) as any
+        });
+
         this.addTab({
             type: POMODORO_TAB_TYPE,
             init: ((tab) => {
