@@ -1032,10 +1032,5 @@
     "confirmDeletePerson": "Are you sure you want to delete this person?",
     "personInUseWarning": "This person is assigned to {0} task(s) and {1} project(s). Please unassign them first.",
     "noPersons": "No persons",
-    "clickAddPerson": "Click the button above to add a person",
-    "assigneeFilter": "Filter by Assignee",
-    "selectAssignees": "Select Assignees",
-    "allAssignees": "All Assignees",
-    "personKanban": "Person Kanban",
-    "personKanbanView": "Person Kanban View"
+    "clickAddPerson": "Click the button above to add a person"
 }

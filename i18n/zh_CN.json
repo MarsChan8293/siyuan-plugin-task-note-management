@@ -1101,10 +1101,5 @@
     "confirmDeletePerson": "确定要删除此责任人吗？",
     "personInUseWarning": "该责任人已被分配给{0}个任务和{1}个项目，请先解除分配。",
     "noPersons": "暂无责任人",
-    "clickAddPerson": "点击上方按钮添加责任人",
-    "assigneeFilter": "责任人筛选",
-    "selectAssignees": "选择责任人",
-    "allAssignees": "全部责任人",
-    "personKanban": "责任人看板",
-    "personKanbanView": "责任人看板视图"
+    "clickAddPerson": "点击上方按钮添加责任人"
 }
