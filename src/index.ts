@@ -29,7 +29,7 @@ import { PersonKanbanView } from "./components/PersonKanbanView";
 import { PomodoroManager } from "./utils/pomodoroManager";
 import SettingPanelComponent from "./SettingPanel.svelte";
 import { exportIcsFile, uploadIcsToCloud } from "./utils/icsUtils";
-import { getFileStat, getFile } from "./api";
+import { getFileStat, getFile, postBroadcastMessage } from "./api";
 
 export const SETTINGS_FILE = "reminder-settings.json";
 export const PROJECT_DATA_FILE = "project.json";
@@ -198,6 +198,11 @@ export default class ReminderPlugin extends Plugin {
     private cleanupFunctions: (() => void)[] = [];
 
     private currentHeadingIds: Set<string> = new Set();
+    private _isWriting: boolean = false;
+    private _writeQueue: Promise<void> = Promise.resolve();
+    private _broadcastSource: EventSource | null = null;
+    private _broadcastSid: string = "";
+    private _broadcastChannel: string = "task-note-sync";
 
     // 内存中的提醒记录，用于避免同一会话中重复提醒
     // 格式: "reminderId_date_time" -> true
@@ -228,8 +233,10 @@ export default class ReminderPlugin extends Plugin {
      * @param data 提醒数据
      */
     public async saveReminderData(data: any): Promise<void> {
-        this.reminderDataCache = data;
-        await this.saveData(REMINDER_DATA_FILE, data);
+        await this.updateReminderData((current: any) => {
+            Object.keys(current).forEach((key) => delete current[key]);
+            Object.assign(current, data || {});
+        });
     }
 
     /**
@@ -254,8 +261,177 @@ export default class ReminderPlugin extends Plugin {
      * @param data 项目数据
      */
     public async saveProjectData(data: any): Promise<void> {
-        this.projectDataCache = data;
-        await this.saveData(PROJECT_DATA_FILE, data);
+        await this.updateProjectData((current: any) => {
+            Object.keys(current).forEach((key) => delete current[key]);
+            Object.assign(current, data || {});
+        });
+    }
+
+    private _enqueueWrite<T>(fn: () => Promise<T>): Promise<T> {
+        const task = this._writeQueue.then(async () => {
+            if (this._isWriting) {
+                await Promise.resolve();
+            }
+            this._isWriting = true;
+            try {
+                return await fn();
+            } finally {
+                this._isWriting = false;
+            }
+        });
+        this._writeQueue = task.then(() => undefined, () => undefined);
+        return task;
+    }
+
+    private async _atomicUpdate<T>(
+        file: string,
+        mutate: (data: Record<string, any>) => Promise<T | void> | T | void,
+        options: { cacheKey: "reminder" | "project"; broadcast?: boolean; scope?: string[] }
+    ): Promise<T | void> {
+        return this._enqueueWrite(async () => {
+            const data = await this.loadData(file) || {};
+            const result = await mutate(data);
+            let dataToSave = data;
+            if (result && typeof result === "object" && result !== data) {
+                dataToSave = result as Record<string, any>;
+            }
+            await this.saveData(file, dataToSave);
+            if (options.cacheKey === "reminder") {
+                this.reminderDataCache = dataToSave;
+            } else {
+                this.projectDataCache = dataToSave;
+            }
+            if (options.broadcast !== false) {
+                await this._broadcastRefresh(options.scope);
+            }
+            return result;
+        });
+    }
+
+    private async _broadcastRefresh(scope: string[] = ["reminder", "project"]): Promise<void> {
+        const payload = {
+            sid: this._broadcastSid,
+            type: "REFRESH_DATA",
+            scope: scope,
+        };
+        try {
+            await postBroadcastMessage(this._broadcastChannel, JSON.stringify(payload));
+        } catch (error) {
+            console.warn("Failed to broadcast refresh message:", error);
+        }
+    }
+
+    private _initBroadcastListener() {
+        try {
+            this._broadcastSource = new EventSource(`/es/broadcast/subscribe?channel=${this._broadcastChannel}`);
+            this._broadcastSource.addEventListener(this._broadcastChannel, async (event: MessageEvent) => {
+                if (!event || !event.data) return;
+                let payload: any = null;
+                try {
+                    payload = JSON.parse(event.data);
+                } catch (error) {
+                    return;
+                }
+                if (!payload || payload.sid === this._broadcastSid) return;
+                if (payload.type !== "REFRESH_DATA") return;
+                const scope = Array.isArray(payload.scope) ? payload.scope : ["reminder", "project"];
+                if (scope.includes("reminder")) {
+                    await this.loadReminderData(true);
+                    window.dispatchEvent(new CustomEvent("reminderUpdated"));
+                }
+                if (scope.includes("project")) {
+                    await this.loadProjectData(true);
+                    window.dispatchEvent(new CustomEvent("projectUpdated"));
+                }
+            });
+            this._broadcastSource.onerror = (error) => {
+                console.warn("Broadcast EventSource error:", error);
+            };
+            this.addCleanup(() => {
+                if (this._broadcastSource) {
+                    this._broadcastSource.close();
+                    this._broadcastSource = null;
+                }
+            });
+        } catch (error) {
+            console.warn("Failed to initialize broadcast listener:", error);
+        }
+    }
+
+    public async updateReminderData(
+        mutate: (data: Record<string, any>) => Promise<void> | void,
+        scope: string[] = ["reminder"]
+    ): Promise<void> {
+        await this._atomicUpdate(REMINDER_DATA_FILE, mutate, { cacheKey: "reminder", scope });
+    }
+
+    public async updateProjectData(
+        mutate: (data: Record<string, any>) => Promise<void> | void,
+        scope: string[] = ["project"]
+    ): Promise<void> {
+        await this._atomicUpdate(PROJECT_DATA_FILE, mutate, { cacheKey: "project", scope });
+    }
+
+    public async updateReminderAndProjectData(
+        mutateReminder: (data: Record<string, any>) => Promise<void> | void,
+        mutateProject: (data: Record<string, any>) => Promise<void> | void,
+        scope: string[] = ["reminder", "project"]
+    ): Promise<void> {
+        await this._enqueueWrite(async () => {
+            const reminderData = await this.loadData(REMINDER_DATA_FILE) || {};
+            const projectData = await this.loadData(PROJECT_DATA_FILE) || {};
+            await mutateProject(projectData);
+            await mutateReminder(reminderData);
+            await this.saveData(REMINDER_DATA_FILE, reminderData);
+            await this.saveData(PROJECT_DATA_FILE, projectData);
+            this.reminderDataCache = reminderData;
+            this.projectDataCache = projectData;
+            await this._broadcastRefresh(scope);
+        });
+    }
+
+    public async addReminder(item: any): Promise<void> {
+        await this.updateReminderData((data) => {
+            data[item.id] = item;
+        });
+    }
+
+    public async updateReminder(id: string, changes: Partial<any>): Promise<void> {
+        await this.updateReminderData((data) => {
+            if (data[id]) {
+                data[id] = { ...data[id], ...changes };
+            }
+        });
+    }
+
+    public async deleteReminder(id: string): Promise<void> {
+        await this.updateReminderData((data) => {
+            if (data[id]) {
+                delete data[id];
+            }
+        });
+    }
+
+    public async addProject(item: any): Promise<void> {
+        await this.updateProjectData((data) => {
+            data[item.id] = item;
+        });
+    }
+
+    public async updateProject(id: string, changes: Partial<any>): Promise<void> {
+        await this.updateProjectData((data) => {
+            if (data[id]) {
+                data[id] = { ...data[id], ...changes };
+            }
+        });
+    }
+
+    public async deleteProject(id: string): Promise<void> {
+        await this.updateProjectData((data) => {
+            if (data[id]) {
+                delete data[id];
+            }
+        });
     }
 
     /**
@@ -525,6 +701,8 @@ export default class ReminderPlugin extends Plugin {
             </symbol>
         `);
         setPluginInstance(this);
+        this._broadcastSid = getFrontend();
+        this._initBroadcastListener();
         // 初始化番茄钟记录管理器，确保番茄数据已加载
         const pomodoroRecordManager = PomodoroRecordManager.getInstance(this);
         await pomodoroRecordManager.initialize();
@@ -2161,8 +2339,9 @@ export default class ReminderPlugin extends Plugin {
             if (!reminderData || typeof reminderData !== 'object' ||
                 reminderData.hasOwnProperty('code') || reminderData.hasOwnProperty('msg')) {
                 console.warn('检测到损坏的提醒数据，重新初始化:', reminderData);
-                reminderData = {};
-                await this.saveReminderData(reminderData);
+                await this.updateReminderData((data: any) => {
+                    Object.keys(data).forEach((key) => delete data[key]);
+                });
                 return;
             }
 
@@ -4213,7 +4392,9 @@ export default class ReminderPlugin extends Plugin {
                         }
 
                         if (mappedCount > 0 || removedCount > 0) {
-                            await this.saveReminderData(reminderData);
+                            await this.updateReminderData((data: any) => {
+                                Object.assign(data, reminderData);
+                            });
                             console.log(`termType 迁移完成，映射 ${mappedCount} 条，删除 ${removedCount} 条 termType 键`);
                         } else {
                             console.log('termType 迁移完成，未发现需要映射或删除的项');

@@ -5113,53 +5113,59 @@ export class PomodoroTimer {
 
     private async updateReminderPomodoroCount() {
         try {
-            const reminderData = await this.plugin.loadReminderData();
-
             // 每个实例（包括重复实例）使用自己的ID来保存番茄钟计数
             const targetId = this.reminder.id;
+            let missingOriginal = false;
+            let missingTarget = false;
 
-            // 对于重复实例，需要确保在 reminderData 中存在对应的条目
-            // 因为重复实例不会直接保存在 reminderData 中，所以需要特殊处理
-            if (this.reminder.isRepeatInstance) {
-                // 获取原始任务
-                const originalReminder = reminderData[this.reminder.originalId];
-                if (!originalReminder) {
-                    console.warn('未找到原始提醒项:', this.reminder.originalId);
-                    return;
-                }
-
-                // 为重复实例创建独立的番茄钟计数记录（保存在 repeat.instancePomodoroCount 中）
-                if (!originalReminder.repeat) {
-                    originalReminder.repeat = {};
-                }
-                if (!originalReminder.repeat.instancePomodoroCount) {
-                    originalReminder.repeat.instancePomodoroCount = {};
-                }
-
-                // 使用实例ID作为key保存番茄钟计数
-                if (typeof originalReminder.repeat.instancePomodoroCount[targetId] !== 'number') {
-                    originalReminder.repeat.instancePomodoroCount[targetId] = 0;
-                }
-                originalReminder.repeat.instancePomodoroCount[targetId]++;
-
-                await this.plugin.saveReminderData(reminderData);
-                window.dispatchEvent(new CustomEvent('reminderUpdated'));
-
-            } else {
-                // 普通任务直接保存
-                if (reminderData[targetId]) {
-                    if (typeof reminderData[targetId].pomodoroCount !== 'number') {
-                        reminderData[targetId].pomodoroCount = 0;
+            await this.plugin.updateReminderData((reminderData: any) => {
+                // 对于重复实例，需要确保在 reminderData 中存在对应的条目
+                // 因为重复实例不会直接保存在 reminderData 中，所以需要特殊处理
+                if (this.reminder.isRepeatInstance) {
+                    // 获取原始任务
+                    const originalReminder = reminderData[this.reminder.originalId];
+                    if (!originalReminder) {
+                        missingOriginal = true;
+                        return;
                     }
 
-                    reminderData[targetId].pomodoroCount++;
-                    await this.plugin.saveReminderData(reminderData);
-                    window.dispatchEvent(new CustomEvent('reminderUpdated'));
+                    // 为重复实例创建独立的番茄钟计数记录（保存在 repeat.instancePomodoroCount 中）
+                    if (!originalReminder.repeat) {
+                        originalReminder.repeat = {};
+                    }
+                    if (!originalReminder.repeat.instancePomodoroCount) {
+                        originalReminder.repeat.instancePomodoroCount = {};
+                    }
 
+                    // 使用实例ID作为key保存番茄钟计数
+                    if (typeof originalReminder.repeat.instancePomodoroCount[targetId] !== 'number') {
+                        originalReminder.repeat.instancePomodoroCount[targetId] = 0;
+                    }
+                    originalReminder.repeat.instancePomodoroCount[targetId]++;
                 } else {
-                    console.warn('未找到对应的提醒项:', targetId);
+                    // 普通任务直接保存
+                    if (reminderData[targetId]) {
+                        if (typeof reminderData[targetId].pomodoroCount !== 'number') {
+                            reminderData[targetId].pomodoroCount = 0;
+                        }
+
+                        reminderData[targetId].pomodoroCount++;
+                    } else {
+                        missingTarget = true;
+                    }
                 }
+            });
+
+            if (missingOriginal) {
+                console.warn('未找到原始提醒项:', this.reminder.originalId);
+                return;
             }
+            if (missingTarget) {
+                console.warn('未找到对应的提醒项:', targetId);
+                return;
+            }
+
+            window.dispatchEvent(new CustomEvent('reminderUpdated'));
         } catch (error) {
             console.error('更新提醒番茄数量失败:', error);
         }

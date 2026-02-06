@@ -16,6 +16,10 @@ export async function request(url: string, data: any) {
     return res;
 }
 
+export async function postBroadcastMessage(channel: string, message: string): Promise<any> {
+    return request("/api/broadcast/postMessage", { channel, message });
+}
+
 // **************************************** Noteboook ****************************************
 export async function refreshSql() {
     return fetchSyncPost('/api/sqlite/flushTransaction');
@@ -1015,4 +1019,3 @@ export async function uploadCloud(paths?: string[], silent: boolean = false): Pr
         return null;
     }
 }
-

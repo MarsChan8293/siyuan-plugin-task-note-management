@@ -1231,114 +1231,112 @@ class SmartBatchDialog {
             // 显示加载对话框
             this.showLoadingDialog("正在批量创建任务...");
 
-            const reminderData = await this.plugin.loadReminderData();
-
             let successCount = 0;
             let failureCount = 0;
             const successfulBlockIds: string[] = [];
 
-            for (const [blockId, setting] of this.blockSettings) {
-                try {
-                    if (!setting.date) {
+            await this.plugin.updateReminderData(async (reminderData: any) => {
+                for (const [blockId, setting] of this.blockSettings) {
+                    try {
+                        if (!setting.date) {
+                            failureCount++;
+                            continue;
+                        }
+
+                        const reminderId = `reminder_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                        const block = await getBlockByID(blockId);
+
+                        const reminder: any = {
+                            id: reminderId,
+                            blockId: blockId,
+                            docId: block.root_id,
+                            completed: false,
+                            pomodoroCount: 0,
+                            createdAt: new Date().toISOString()
+                        };
+
+                        // 更新字段
+                        reminder.title = setting.cleanTitle;
+                        reminder.date = setting.date;
+                        reminder.priority = setting.priority;
+                        reminder.categoryId = setting.categoryId || undefined;
+                        reminder.projectId = setting.projectId || undefined;
+                        if (setting.kanbanStatus) reminder.kanbanStatus = setting.kanbanStatus;
+                        reminder.repeat = setting.repeatConfig?.enabled ? setting.repeatConfig : undefined;
+
+                        // 如果新建时没有 docId 或者是新建的 reminder 对象，重新设置
+                        if (!reminder.docId && block) {
+                            reminder.docId = block.root_id;
+                        }
+
+                        if (setting.hasTime && setting.time) {
+                            reminder.time = setting.time;
+                        }
+
+                        if (setting.endDate) {
+                            reminder.endDate = setting.endDate;
+                        }
+
+                        if (setting.hasEndTime && setting.endTime) {
+                            reminder.endTime = setting.endTime;
+                        }
+
+                        if (setting.note) {
+                            reminder.note = setting.note;
+                        }
+
+                        // 如果是周期任务，自动完成所有过去的实例
+                        if (setting.repeatConfig?.enabled && setting.date) {
+                            const { generateRepeatInstances } = await import("../utils/repeatUtils");
+
+                            const today = getLogicalDateString();
+
+                            // 计算从开始日期到今天的天数，用于设置 maxInstances
+                            const startDateObj = new Date(setting.date);
+                            const todayObj = new Date(today);
+                            const daysDiff = Math.ceil((todayObj.getTime() - startDateObj.getTime()) / (1000 * 60 * 60 * 24));
+
+                            // 根据重复类型估算可能的最大实例数
+                            let maxInstances = 1000; // 默认值
+                            if (setting.repeatConfig.type === 'daily') {
+                                maxInstances = Math.max(daysDiff + 10, 1000); // 每日重复，最多是天数
+                            } else if (setting.repeatConfig.type === 'weekly') {
+                                maxInstances = Math.max(Math.ceil(daysDiff / 7) + 10, 500);
+                            } else if (setting.repeatConfig.type === 'monthly' || setting.repeatConfig.type === 'lunar-monthly') {
+                                maxInstances = Math.max(Math.ceil(daysDiff / 30) + 10, 200);
+                            } else if (setting.repeatConfig.type === 'yearly' || setting.repeatConfig.type === 'lunar-yearly') {
+                                maxInstances = Math.max(Math.ceil(daysDiff / 365) + 10, 50);
+                            }
+
+                            // 生成从任务开始日期到今天的所有实例
+                            const instances = generateRepeatInstances(reminder, setting.date, today, maxInstances);
+
+                            // 将所有早于今天的实例标记为已完成
+                            const pastInstances: string[] = [];
+                            instances.forEach(instance => {
+                                if (instance.date < today) {
+                                    pastInstances.push(instance.date);
+                                }
+                            });
+
+                            // 如果有过去的实例，添加到completedInstances
+                            if (pastInstances.length > 0) {
+                                if (!reminder.repeat.completedInstances) {
+                                    reminder.repeat.completedInstances = [];
+                                }
+                                reminder.repeat.completedInstances.push(...pastInstances);
+                            }
+                        }
+
+                        reminderData[reminderId] = reminder;
+                        successCount++;
+                        successfulBlockIds.push(blockId);
+                    } catch (error) {
+                        console.error(`设置块 ${blockId} 提醒失败:`, error);
                         failureCount++;
-                        continue;
                     }
-
-                    const reminderId = `reminder_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                    const block = await getBlockByID(blockId);
-
-                    const reminder: any = {
-                        id: reminderId,
-                        blockId: blockId,
-                        docId: block.root_id,
-                        completed: false,
-                        pomodoroCount: 0,
-                        createdAt: new Date().toISOString()
-                    };
-
-                    // 更新字段
-                    reminder.title = setting.cleanTitle;
-                    reminder.date = setting.date;
-                    reminder.priority = setting.priority;
-                    reminder.categoryId = setting.categoryId || undefined;
-                    reminder.projectId = setting.projectId || undefined;
-                    if (setting.kanbanStatus) reminder.kanbanStatus = setting.kanbanStatus;
-                    reminder.repeat = setting.repeatConfig?.enabled ? setting.repeatConfig : undefined;
-
-                    // 如果新建时没有 docId 或者是新建的 reminder 对象，重新设置
-                    if (!reminder.docId && block) {
-                        reminder.docId = block.root_id;
-                    }
-
-                    if (setting.hasTime && setting.time) {
-                        reminder.time = setting.time;
-                    }
-
-                    if (setting.endDate) {
-                        reminder.endDate = setting.endDate;
-                    }
-
-                    if (setting.hasEndTime && setting.endTime) {
-                        reminder.endTime = setting.endTime;
-                    }
-
-                    if (setting.note) {
-                        reminder.note = setting.note;
-                    }
-
-                    // 如果是周期任务，自动完成所有过去的实例
-                    if (setting.repeatConfig?.enabled && setting.date) {
-                        const { generateRepeatInstances } = await import("../utils/repeatUtils");
-
-                        const today = getLogicalDateString();
-
-                        // 计算从开始日期到今天的天数，用于设置 maxInstances
-                        const startDateObj = new Date(setting.date);
-                        const todayObj = new Date(today);
-                        const daysDiff = Math.ceil((todayObj.getTime() - startDateObj.getTime()) / (1000 * 60 * 60 * 24));
-
-                        // 根据重复类型估算可能的最大实例数
-                        let maxInstances = 1000; // 默认值
-                        if (setting.repeatConfig.type === 'daily') {
-                            maxInstances = Math.max(daysDiff + 10, 1000); // 每日重复，最多是天数
-                        } else if (setting.repeatConfig.type === 'weekly') {
-                            maxInstances = Math.max(Math.ceil(daysDiff / 7) + 10, 500);
-                        } else if (setting.repeatConfig.type === 'monthly' || setting.repeatConfig.type === 'lunar-monthly') {
-                            maxInstances = Math.max(Math.ceil(daysDiff / 30) + 10, 200);
-                        } else if (setting.repeatConfig.type === 'yearly' || setting.repeatConfig.type === 'lunar-yearly') {
-                            maxInstances = Math.max(Math.ceil(daysDiff / 365) + 10, 50);
-                        }
-
-                        // 生成从任务开始日期到今天的所有实例
-                        const instances = generateRepeatInstances(reminder, setting.date, today, maxInstances);
-
-                        // 将所有早于今天的实例标记为已完成
-                        const pastInstances: string[] = [];
-                        instances.forEach(instance => {
-                            if (instance.date < today) {
-                                pastInstances.push(instance.date);
-                            }
-                        });
-
-                        // 如果有过去的实例，添加到completedInstances
-                        if (pastInstances.length > 0) {
-                            if (!reminder.repeat.completedInstances) {
-                                reminder.repeat.completedInstances = [];
-                            }
-                            reminder.repeat.completedInstances.push(...pastInstances);
-                        }
-                    }
-
-                    reminderData[reminderId] = reminder;
-                    successCount++;
-                    successfulBlockIds.push(blockId);
-                } catch (error) {
-                    console.error(`设置块 ${blockId} 提醒失败:`, error);
-                    failureCount++;
                 }
-            }
-
-            await this.plugin.saveReminderData(reminderData);
+            });
 
             // 为所有成功创建提醒的块更新属性
             for (const blockId of successfulBlockIds) {

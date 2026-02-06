@@ -378,44 +378,44 @@ export class ProjectDialog {
                 return;
             }
 
-            const projectData = await this.plugin.loadProjectData();
             const projectId = this.blockId || `quick_${Date.now()}`;
-            const existingProject = this.blockId ? projectData[this.blockId] : null;
+            let savedProject: any = null;
 
             // 获取块ID输入框的值
             const blockInputEl = this.dialog.element.querySelector('#projectBlockInput') as HTMLInputElement;
             const rawBlockVal = blockInputEl?.value?.trim() || '';
             const inputBlockId = rawBlockVal ? (this.extractBlockId(rawBlockVal) || rawBlockVal) : null;
 
-            const project = {
-                ...(existingProject || {}),
-                id: projectId,
-                blockId: inputBlockId || null,
-                title: title,
-                note: noteEl.value.trim(),
-                status: statusEl.value,
-                priority: priorityEl.value,
-                categoryId: this.selectedCategoryIds.join(','),
-                color: colorEl.value,
-                startDate: startDate,
-                endDate: endDate || null,
-                assigneeId: this.selectedAssigneeId || undefined,
-                // 保持向后兼容
-                archived: statusEl.value === 'archived',
-                updatedTime: new Date().toISOString(),
-            };
-
-            if (!existingProject) {
-                project.createdTime = project.updatedTime;
-                project.sort = 0;
-            }
-
-            projectData[projectId] = project;
-            await this.plugin.saveProjectData(projectData);
+            await this.plugin.updateProjectData((projectData: any) => {
+                const existingProject = this.blockId ? projectData[this.blockId] : null;
+                const project = {
+                    ...(existingProject || {}),
+                    id: projectId,
+                    blockId: inputBlockId || null,
+                    title: title,
+                    note: noteEl.value.trim(),
+                    status: statusEl.value,
+                    priority: priorityEl.value,
+                    categoryId: this.selectedCategoryIds.join(','),
+                    color: colorEl.value,
+                    startDate: startDate,
+                    endDate: endDate || null,
+                    assigneeId: this.selectedAssigneeId || undefined,
+                    // 保持向后兼容
+                    archived: statusEl.value === 'archived',
+                    updatedTime: new Date().toISOString(),
+                };
+                if (!existingProject) {
+                    project.createdTime = project.updatedTime;
+                    project.sort = 0;
+                }
+                projectData[projectId] = project;
+                savedProject = project;
+            });
 
             // 触发更新事件，包含项目ID
             window.dispatchEvent(new CustomEvent('projectUpdated', {
-                detail: { projectId, project }
+                detail: { projectId, project: savedProject }
             }));
 
             showMessage(i18n("reminderSaved") || "项目保存成功");

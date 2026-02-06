@@ -1741,12 +1741,12 @@ export class ProjectKanbanView {
 
                 // 保存
                 if (groupId === null) {
-                    const projectData = await this.plugin.loadProjectData() || {};
-                    const project = projectData[this.projectId];
-                    if (project) {
-                        project.milestones = otherMs;
-                        await this.plugin.saveProjectData(projectData);
-                    }
+                    await this.plugin.updateProjectData((projectData: any) => {
+                        const project = projectData[this.projectId];
+                        if (project) {
+                            project.milestones = otherMs;
+                        }
+                    });
                 } else {
                     const projectManager = ProjectManager.getInstance(this.plugin);
                     const groups = await projectManager.getProjectCustomGroups(this.projectId);
@@ -2380,15 +2380,15 @@ export class ProjectKanbanView {
         const projectManager = this.projectManager;
         if (groupId === null) {
             // 保存默认里程碑
-            const projectData = await this.plugin.loadProjectData() || {};
-            const project = projectData[this.projectId];
-            if (project) {
-                if (!project.milestones) project.milestones = [];
-                const index = project.milestones.findIndex((m: any) => m.id === milestone.id);
-                if (index !== -1) project.milestones[index] = milestone;
-                else project.milestones.push(milestone);
-                await this.plugin.saveProjectData(projectData);
-            }
+            await this.plugin.updateProjectData((projectData: any) => {
+                const project = projectData[this.projectId];
+                if (project) {
+                    if (!project.milestones) project.milestones = [];
+                    const index = project.milestones.findIndex((m: any) => m.id === milestone.id);
+                    if (index !== -1) project.milestones[index] = milestone;
+                    else project.milestones.push(milestone);
+                }
+            });
         } else {
             // 保存到指定分组
             const groups = await projectManager.getProjectCustomGroups(this.projectId);
@@ -2408,12 +2408,12 @@ export class ProjectKanbanView {
         const projectManager = this.projectManager;
         // 1. 从项目配置或分组配置中移除里程碑定义
         if (groupId === null) {
-            const projectData = await this.plugin.loadProjectData() || {};
-            const project = projectData[this.projectId];
-            if (project && project.milestones) {
-                project.milestones = project.milestones.filter((m: any) => m.id !== milestoneId);
-                await this.plugin.saveProjectData(projectData);
-            }
+            await this.plugin.updateProjectData((projectData: any) => {
+                const project = projectData[this.projectId];
+                if (project && project.milestones) {
+                    project.milestones = project.milestones.filter((m: any) => m.id !== milestoneId);
+                }
+            });
         } else {
             const groups = await projectManager.getProjectCustomGroups(this.projectId);
             const group = groups.find((g: any) => g.id === groupId);

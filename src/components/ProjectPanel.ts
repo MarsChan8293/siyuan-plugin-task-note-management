@@ -608,7 +608,9 @@ export class ProjectPanel {
 
             // 如果有数据迁移，保存更新
             if (dataChanged) {
-                await this.plugin.saveProjectData(projectData);
+                await this.plugin.updateProjectData((data: any) => {
+                    Object.assign(data, projectData);
+                });
             }
 
             // 应用分类过滤
@@ -1593,7 +1595,9 @@ export class ProjectPanel {
                 }
             });
 
-            await this.plugin.saveProjectData(projectData);
+            await this.plugin.updateProjectData((data: any) => {
+                Object.assign(data, projectData);
+            });
             window.dispatchEvent(new CustomEvent('projectUpdated'));
 
         } catch (error) {
@@ -2103,42 +2107,33 @@ export class ProjectPanel {
                 return;
             }
 
-            // 如果需要新建分组，在目标项目中创建并返回新 id
-            let appliedGroupId: string | null = opts.groupId || null;
-            if (opts.newGroupName) {
-                const newId = `cg_${Date.now()}`;
-                const target = projectData[targetId];
-                if (!target.customGroups) target.customGroups = [];
-                target.customGroups.push({ id: newId, name: opts.newGroupName });
-                appliedGroupId = newId;
-            }
-
-            // 读取提醒数据并更新
-            const reminderData = await this.plugin.loadReminderData();
             let movedCount = 0;
-            Object.values(reminderData).forEach((r: any) => {
-                if (r && r.projectId === sourceId) {
-                    r.projectId = targetId;
-                    if (appliedGroupId) {
-                        r.customGroupId = appliedGroupId;
-                    } else {
-                        // 如果选择保持原分组，则不改 customGroupId
+            let appliedGroupId: string | null = opts.groupId || null;
+            await this.plugin.updateReminderAndProjectData(
+                (reminderData: any) => {
+                    Object.values(reminderData).forEach((r: any) => {
+                        if (r && r.projectId === sourceId) {
+                            r.projectId = targetId;
+                            if (appliedGroupId) {
+                                r.customGroupId = appliedGroupId;
+                            }
+                            movedCount++;
+                        }
+                    });
+                },
+                (projectDataToUpdate: any) => {
+                    if (opts.newGroupName) {
+                        const newId = `cg_${Date.now()}`;
+                        const target = projectDataToUpdate[targetId];
+                        if (!target.customGroups) target.customGroups = [];
+                        target.customGroups.push({ id: newId, name: opts.newGroupName });
+                        appliedGroupId = newId;
                     }
-                    movedCount++;
+                    if (opts.deleteSource && projectDataToUpdate[sourceId]) {
+                        delete projectDataToUpdate[sourceId];
+                    }
                 }
-            });
-
-            // 保存提醒与项目数据
-            await this.plugin.saveReminderData(reminderData);
-            await this.plugin.saveProjectData(projectData);
-
-            // 可选删除源项目
-            if (opts.deleteSource) {
-                if (projectData[sourceId]) {
-                    delete projectData[sourceId];
-                    await this.plugin.saveProjectData(projectData);
-                }
-            }
+            );
 
             // 触发更新
             window.dispatchEvent(new CustomEvent('reminderUpdated'));
@@ -2155,11 +2150,15 @@ export class ProjectPanel {
 
     private async setPriority(projectId: string, priority: string) {
         try {
-            const projectData = await this.plugin.loadProjectData();
-            if (projectData[projectId]) {
-                projectData[projectId].priority = priority;
-                projectData[projectId].updatedTime = new Date().toISOString();
-                await this.plugin.saveProjectData(projectData);
+            let exists = false;
+            await this.plugin.updateProjectData((projectData: any) => {
+                if (projectData[projectId]) {
+                    exists = true;
+                    projectData[projectId].priority = priority;
+                    projectData[projectId].updatedTime = new Date().toISOString();
+                }
+            });
+            if (exists) {
                 window.dispatchEvent(new CustomEvent('projectUpdated'));
                 this.loadProjects();
                 showMessage(i18n("priorityUpdated") || "优先级更新成功");
@@ -2174,11 +2173,15 @@ export class ProjectPanel {
 
     private async setCategory(projectId: string, categoryId: string | null) {
         try {
-            const projectData = await this.plugin.loadProjectData();
-            if (projectData[projectId]) {
-                projectData[projectId].categoryId = categoryId;
-                projectData[projectId].updatedTime = new Date().toISOString();
-                await this.plugin.saveProjectData(projectData);
+            let exists = false;
+            await this.plugin.updateProjectData((projectData: any) => {
+                if (projectData[projectId]) {
+                    exists = true;
+                    projectData[projectId].categoryId = categoryId;
+                    projectData[projectId].updatedTime = new Date().toISOString();
+                }
+            });
+            if (exists) {
                 window.dispatchEvent(new CustomEvent('projectUpdated'));
                 this.loadProjects();
 
@@ -2197,13 +2200,17 @@ export class ProjectPanel {
 
     private async setStatus(projectId: string, status: string) {
         try {
-            const projectData = await this.plugin.loadProjectData();
-            if (projectData[projectId]) {
-                projectData[projectId].status = status;
-                // 保持向后兼容
-                projectData[projectId].archived = status === 'archived';
-                projectData[projectId].updatedTime = new Date().toISOString();
-                await this.plugin.saveProjectData(projectData);
+            let exists = false;
+            await this.plugin.updateProjectData((projectData: any) => {
+                if (projectData[projectId]) {
+                    exists = true;
+                    projectData[projectId].status = status;
+                    // 保持向后兼容
+                    projectData[projectId].archived = status === 'archived';
+                    projectData[projectId].updatedTime = new Date().toISOString();
+                }
+            });
+            if (exists) {
                 window.dispatchEvent(new CustomEvent('projectUpdated'));
                 this.loadProjects();
 
@@ -2269,37 +2276,48 @@ export class ProjectPanel {
 
     private async deleteProjectAndTasks(projectId: string, deleteTasks: boolean) {
         try {
-            const projectData = await this.plugin.loadProjectData();
-            if (!projectData[projectId]) {
-                showMessage(i18n("projectNotExist") || "项目不存在");
-                return;
-            }
-
-            // 删除项目
-            delete projectData[projectId];
-            await this.plugin.saveProjectData(projectData);
-
-            // 如果需要删除任务
             if (deleteTasks) {
-                const reminderData = await this.plugin.loadReminderData();
                 let deletedCount = 0;
-
-                // 删除所有关联的任务
-                Object.keys(reminderData).forEach(reminderId => {
-                    const reminder = reminderData[reminderId];
-                    if (reminder && reminder.projectId === projectId) {
-                        delete reminderData[reminderId];
-                        deletedCount++;
+                let projectExists = true;
+                await this.plugin.updateReminderAndProjectData(
+                    (reminderData: any) => {
+                        Object.keys(reminderData).forEach(reminderId => {
+                            const reminder = reminderData[reminderId];
+                            if (reminder && reminder.projectId === projectId) {
+                                delete reminderData[reminderId];
+                                deletedCount++;
+                            }
+                        });
+                    },
+                    (projectData: any) => {
+                        if (!projectData[projectId]) {
+                            projectExists = false;
+                            return;
+                        }
+                        delete projectData[projectId];
                     }
-                });
-
+                );
+                if (!projectExists) {
+                    showMessage(i18n("projectNotExist") || "项目不存在");
+                    return;
+                }
                 if (deletedCount > 0) {
-                    await this.plugin.saveReminderData(reminderData);
                     showMessage(i18n("projectAndTasksDeleted")?.replace("${count}", deletedCount.toString()) || `项目及 ${deletedCount} 个任务已删除`);
                 } else {
                     showMessage(i18n("projectDeleted") || "项目删除成功");
                 }
             } else {
+                let projectExists = false;
+                await this.plugin.updateProjectData((projectData: any) => {
+                    if (projectData[projectId]) {
+                        projectExists = true;
+                        delete projectData[projectId];
+                    }
+                });
+                if (!projectExists) {
+                    showMessage(i18n("projectNotExist") || "项目不存在");
+                    return;
+                }
                 showMessage(i18n("projectDeleted") || "项目删除成功");
             }
 
@@ -2335,10 +2353,14 @@ export class ProjectPanel {
 
     private async deleteProjectByBlockId(blockId: string) {
         try {
-            const projectData = await this.plugin.loadProjectData();
-            if (projectData[blockId]) {
-                delete projectData[blockId];
-                await this.plugin.saveProjectData(projectData);
+            let exists = false;
+            await this.plugin.updateProjectData((projectData: any) => {
+                if (projectData[blockId]) {
+                    exists = true;
+                    delete projectData[blockId];
+                }
+            });
+            if (exists) {
                 // 关闭该项目的看板标签页
                 this.closeProjectKanbanTab(blockId);
                 window.dispatchEvent(new CustomEvent('projectUpdated'));
@@ -2429,10 +2451,14 @@ export class ProjectPanel {
 
     private async bindProjectToBlock(project: any, blockId: string) {
         try {
-            const projectData = await this.plugin.loadProjectData();
-            if (projectData[project.id]) {
-                projectData[project.id].blockId = blockId;
-                await this.plugin.saveProjectData(projectData);
+            let exists = false;
+            await this.plugin.updateProjectData((projectData: any) => {
+                if (projectData[project.id]) {
+                    exists = true;
+                    projectData[project.id].blockId = blockId;
+                }
+            });
+            if (exists) {
                 window.dispatchEvent(new CustomEvent('projectUpdated'));
                 this.loadProjects();
             }

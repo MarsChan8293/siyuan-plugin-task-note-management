@@ -77,11 +77,11 @@ export class ProjectManager {
 
     public async setProjectColor(projectId: string, color: string) {
         try {
-            const projectData = await this.plugin.loadProjectData() || {};
-            if (projectData[projectId]) {
-                projectData[projectId].color = color;
-                await this.plugin.saveProjectData(projectData);
-            }
+            await this.plugin.updateProjectData((projectData: any) => {
+                if (projectData[projectId]) {
+                    projectData[projectId].color = color;
+                }
+            });
             this.projectColors[projectId] = color;
             // 触发项目颜色更新事件，通知日历视图等组件更新颜色缓存
             window.dispatchEvent(new CustomEvent('projectColorUpdated'));
@@ -222,11 +222,11 @@ export class ProjectManager {
      */
     public async setProjectKanbanMode(projectId: string, mode: 'status' | 'custom' | 'list'): Promise<void> {
         try {
-            const projectData = await this.plugin.loadProjectData() || {};
-            if (projectData[projectId]) {
-                projectData[projectId].kanbanMode = mode;
-                await this.plugin.saveProjectData(projectData);
-            }
+            await this.plugin.updateProjectData((projectData: any) => {
+                if (projectData[projectId]) {
+                    projectData[projectId].kanbanMode = mode;
+                }
+            });
         } catch (error) {
             console.error('设置项目看板模式失败:', error);
             throw error;
@@ -252,11 +252,11 @@ export class ProjectManager {
      */
     public async setProjectCustomGroups(projectId: string, groups: ProjectGroup[]): Promise<void> {
         try {
-            const projectData = await this.plugin.loadProjectData() || {};
-            if (projectData[projectId]) {
-                projectData[projectId].customGroups = groups;
-                await this.plugin.saveProjectData(projectData);
-            }
+            await this.plugin.updateProjectData((projectData: any) => {
+                if (projectData[projectId]) {
+                    projectData[projectId].customGroups = groups;
+                }
+            });
         } catch (error) {
             console.error('设置项目自定义分组失败:', error);
             throw error;
@@ -282,11 +282,11 @@ export class ProjectManager {
      */
     public async setProjectMilestones(projectId: string, milestones: Milestone[]): Promise<void> {
         try {
-            const projectData = await this.plugin.loadProjectData() || {};
-            if (projectData[projectId]) {
-                projectData[projectId].milestones = milestones;
-                await this.plugin.saveProjectData(projectData);
-            }
+            await this.plugin.updateProjectData((projectData: any) => {
+                if (projectData[projectId]) {
+                    projectData[projectId].milestones = milestones;
+                }
+            });
         } catch (error) {
             console.error('设置项目里程碑失败:', error);
             throw error;
@@ -376,11 +376,11 @@ export class ProjectManager {
      */
     public async setProjectSortRule(projectId: string, sortRule: string): Promise<void> {
         try {
-            const projectData = await this.plugin.loadProjectData() || {};
-            if (projectData[projectId]) {
-                projectData[projectId].sortRule = sortRule;
-                await this.plugin.saveProjectData(projectData);
-            }
+            await this.plugin.updateProjectData((projectData: any) => {
+                if (projectData[projectId]) {
+                    projectData[projectId].sortRule = sortRule;
+                }
+            });
         } catch (error) {
             console.error('设置项目排序规则失败:', error);
             throw error;
@@ -406,11 +406,11 @@ export class ProjectManager {
      */
     public async setProjectSortOrder(projectId: string, sortOrder: 'asc' | 'desc'): Promise<void> {
         try {
-            const projectData = await this.plugin.loadProjectData() || {};
-            if (projectData[projectId]) {
-                projectData[projectId].sortOrder = sortOrder;
-                await this.plugin.saveProjectData(projectData);
-            }
+            await this.plugin.updateProjectData((projectData: any) => {
+                if (projectData[projectId]) {
+                    projectData[projectId].sortOrder = sortOrder;
+                }
+            });
         } catch (error) {
             console.error('设置项目排序方向失败:', error);
             throw error;
@@ -469,11 +469,11 @@ export class ProjectManager {
      */
     public async setProjectTags(projectId: string, tags: Array<{ id: string, name: string, color: string }>): Promise<void> {
         try {
-            const projectData = await this.plugin.loadProjectData() || {};
-            if (projectData[projectId]) {
-                projectData[projectId].tags = tags;
-                await this.plugin.saveProjectData(projectData);
-            }
+            await this.plugin.updateProjectData((projectData: any) => {
+                if (projectData[projectId]) {
+                    projectData[projectId].tags = tags;
+                }
+            });
         } catch (error) {
             console.error('设置项目标签失败:', error);
             throw error;
@@ -579,39 +579,39 @@ export class ProjectManager {
      */
     public async setProjectKanbanStatuses(projectId: string, statuses: KanbanStatus[]): Promise<void> {
         try {
-            const projectData = await this.plugin.loadProjectData() || {};
-            if (projectData[projectId]) {
-                // 获取默认配置用于对比
-                const defaults = this.getDefaultKanbanStatuses();
+            await this.plugin.updateProjectData((projectData: any) => {
+                if (projectData[projectId]) {
+                    // 获取默认配置用于对比
+                    const defaults = this.getDefaultKanbanStatuses();
 
-                // 构建要保存的状态列表 - 只保存非固定状态
-                // 固定状态的修改会在保存时特殊处理，但只保存非固定状态到数据库
-                const statusesToSave: KanbanStatus[] = [];
+                    // 构建要保存的状态列表 - 只保存非固定状态
+                    // 固定状态的修改会在保存时特殊处理，但只保存非固定状态到数据库
+                    const statusesToSave: KanbanStatus[] = [];
 
-                for (const status of statuses) {
-                    if (status.isFixed) {
-                        // 固定状态：只保存修改的配置（图标、颜色、排序），不保存完整默认配置
-                        // 这样加载时可以从数据库读取固定状态的自定义配置
-                        statusesToSave.push({
-                            id: status.id,
-                            name: status.name,
-                            color: status.color,
-                            icon: status.icon,
-                            isFixed: true,
-                            sort: status.sort
-                        });
-                    } else {
-                        // 非固定状态完整保存
-                        statusesToSave.push({
-                            ...status,
-                            isFixed: false
-                        });
+                    for (const status of statuses) {
+                        if (status.isFixed) {
+                            // 固定状态：只保存修改的配置（图标、颜色、排序），不保存完整默认配置
+                            // 这样加载时可以从数据库读取固定状态的自定义配置
+                            statusesToSave.push({
+                                id: status.id,
+                                name: status.name,
+                                color: status.color,
+                                icon: status.icon,
+                                isFixed: true,
+                                sort: status.sort
+                            });
+                        } else {
+                            // 非固定状态完整保存
+                            statusesToSave.push({
+                                ...status,
+                                isFixed: false
+                            });
+                        }
                     }
-                }
 
-                projectData[projectId].kanbanStatuses = statusesToSave;
-                await this.plugin.saveProjectData(projectData);
-            }
+                    projectData[projectId].kanbanStatuses = statusesToSave;
+                }
+            });
         } catch (error) {
             console.error('设置项目看板状态失败:', error);
             throw error;

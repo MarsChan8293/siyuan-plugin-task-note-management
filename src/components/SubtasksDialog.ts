@@ -158,18 +158,18 @@ export class SubtasksDialog {
     }
 
     private async toggleSubtask(id: string, completed: boolean) {
-        const reminderData = await this.plugin.loadReminderData() || {};
-        if (reminderData[id]) {
-            reminderData[id].completed = completed;
-            if (completed) {
-                reminderData[id].completedTime = new Date().toISOString();
-            } else {
-                delete reminderData[id].completedTime;
+        await this.plugin.updateReminderData((reminderData: any) => {
+            if (reminderData[id]) {
+                reminderData[id].completed = completed;
+                if (completed) {
+                    reminderData[id].completedTime = new Date().toISOString();
+                } else {
+                    delete reminderData[id].completedTime;
+                }
             }
-            await this.plugin.saveReminderData(reminderData);
-            await this.loadSubtasks();
-            this.renderSubtasks();
-        }
+        });
+        await this.loadSubtasks();
+        this.renderSubtasks();
     }
 
     private async deleteSubtask(id: string) {
@@ -187,14 +187,14 @@ export class SubtasksDialog {
         // Use native confirm or siyuan confirm if available
         if (confirm(confirmMsg)) {
             // Recursive delete
-            const deleteRecursive = (targetId: string) => {
-                const children = Object.values(reminderData).filter((r: any) => r.parentId === targetId);
-                children.forEach((child: any) => deleteRecursive(child.id));
-                delete reminderData[targetId];
-            };
-
-            deleteRecursive(id);
-            await this.plugin.saveReminderData(reminderData);
+            await this.plugin.updateReminderData((data: any) => {
+                const deleteRecursive = (targetId: string) => {
+                    const children = Object.values(data).filter((r: any) => r.parentId === targetId);
+                    children.forEach((child: any) => deleteRecursive(child.id));
+                    delete data[targetId];
+                };
+                deleteRecursive(id);
+            });
             await this.loadSubtasks();
             this.renderSubtasks();
             showMessage(i18n("deleteSuccess"));
@@ -257,17 +257,16 @@ export class SubtasksDialog {
         const [draggingTask] = this.subtasks.splice(draggingIndex, 1);
         this.subtasks.splice(targetIndex, 0, draggingTask);
 
-        const reminderData = await this.plugin.loadReminderData() || {};
-        // Update sort values in reminderData
-        this.subtasks.forEach((task: any, index: number) => {
-            const sortVal = index * 10;
-            task.sort = sortVal;
-            if (reminderData[task.id]) {
-                reminderData[task.id].sort = sortVal;
-            }
+        await this.plugin.updateReminderData((reminderData: any) => {
+            // Update sort values in reminderData
+            this.subtasks.forEach((task: any, index: number) => {
+                const sortVal = index * 10;
+                task.sort = sortVal;
+                if (reminderData[task.id]) {
+                    reminderData[task.id].sort = sortVal;
+                }
+            });
         });
-
-        await this.plugin.saveReminderData(reminderData);
         this.renderSubtasks();
         showMessage(i18n("sortUpdated") || "排序已更新");
     }

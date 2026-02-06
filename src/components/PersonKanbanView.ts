@@ -509,16 +509,16 @@ export class PersonKanbanView {
 
     private async markTaskCompleted(task: PersonTask) {
         try {
-            const reminderData = await this.plugin.loadReminderData();
-            if (reminderData && reminderData[task.id]) {
-                reminderData[task.id].completed = true;
-                reminderData[task.id].completedTime = getLocalDateTimeString(new Date());
-                await this.plugin.saveReminderData(reminderData);
-                window.dispatchEvent(new CustomEvent('reminderUpdated', {
-                    detail: { source: 'personKanban' }
-                }));
-                showMessage(i18n('reminderUpdated') || '任务已更新');
-            }
+            await this.plugin.updateReminderData((reminderData: any) => {
+                if (reminderData && reminderData[task.id]) {
+                    reminderData[task.id].completed = true;
+                    reminderData[task.id].completedTime = getLocalDateTimeString(new Date());
+                }
+            });
+            window.dispatchEvent(new CustomEvent('reminderUpdated', {
+                detail: { source: 'personKanban' }
+            }));
+            showMessage(i18n('reminderUpdated') || '任务已更新');
         } catch (error) {
             console.error('标记任务完成失败:', error);
             showMessage(i18n('operationFailed') || '操作失败，请重试');
@@ -553,15 +553,15 @@ export class PersonKanbanView {
 
     private async setTaskPriority(task: PersonTask, priority: string) {
         try {
-            const reminderData = await this.plugin.loadReminderData();
-            if (reminderData && reminderData[task.id]) {
-                reminderData[task.id].priority = priority;
-                await this.plugin.saveReminderData(reminderData);
-                window.dispatchEvent(new CustomEvent('reminderUpdated', {
-                    detail: { source: 'personKanban' }
-                }));
-                showMessage(i18n('prioritySet') || '优先级已设置', 2000, 'success');
-            }
+            await this.plugin.updateReminderData((reminderData: any) => {
+                if (reminderData && reminderData[task.id]) {
+                    reminderData[task.id].priority = priority;
+                }
+            });
+            window.dispatchEvent(new CustomEvent('reminderUpdated', {
+                detail: { source: 'personKanban' }
+            }));
+            showMessage(i18n('prioritySet') || '优先级已设置', 2000, 'success');
         } catch (error) {
             console.error('设置优先级失败:', error);
             showMessage(i18n('operationFailed') || '操作失败，请重试');

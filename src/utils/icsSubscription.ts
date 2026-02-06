@@ -239,7 +239,10 @@ export async function saveReminders(plugin: any, allReminders: any): Promise<voi
         });
 
         // Save local reminders
-        await plugin.saveReminderData(localReminders);
+        await plugin.updateReminderData((data: any) => {
+            Object.keys(data).forEach((key) => delete data[key]);
+            Object.assign(data, localReminders);
+        });
 
         // Save each subscription's tasks
         for (const subId of Object.keys(subRemindersBySubId)) {

@@ -2592,8 +2592,9 @@ export class CalendarView {
             }
 
             // 保存数据
-            reminderData[newReminderId] = newReminder;
-            await this.plugin.saveReminderData(reminderData);
+            await this.plugin.updateReminderData((data: any) => {
+                data[newReminderId] = newReminder;
+            });
 
             // 如果有绑定块，更新块的书签状态
             if (newReminder.blockId) {
@@ -6874,5 +6875,4 @@ export class CalendarView {
      */
 
 }
-
 

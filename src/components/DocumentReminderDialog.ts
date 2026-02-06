@@ -934,7 +934,9 @@ export class DocumentReminderDialog {
                 }
             }
 
-            await this.plugin.saveReminderData(reminderData);
+            await this.plugin.updateReminderData((data: any) => {
+                Object.assign(data, reminderData);
+            });
 
             // 更新块的书签状态
             const blockId = reminder.blockId || reminder.id;
@@ -1139,17 +1141,15 @@ export class DocumentReminderDialog {
     private async performDeleteReminder(reminder: any) {
         // 用户确认删除
         try {
-            const reminderData = await this.plugin.loadReminderData();
-
-            if (reminder.isRepeatInstance) {
-                // 删除重复事件实例
-                await this.deleteRepeatInstance(reminderData, reminder);
-            } else {
-                // 删除普通提醒
-                await this.deleteNormalReminder(reminderData, reminder);
-            }
-
-            await this.plugin.saveReminderData(reminderData);
+            await this.plugin.updateReminderData(async (reminderData: any) => {
+                if (reminder.isRepeatInstance) {
+                    // 删除重复事件实例
+                    await this.deleteRepeatInstance(reminderData, reminder);
+                } else {
+                    // 删除普通提醒
+                    await this.deleteNormalReminder(reminderData, reminder);
+                }
+            });
 
             // 更新块的书签状态
             const blockId = reminder.blockId || reminder.id;

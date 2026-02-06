@@ -429,32 +429,38 @@ export class BlockRemindersDialog {
 
     private async toggleReminderComplete(reminder: any, completed: boolean) {
         try {
-            const reminderData = await this.plugin.loadReminderData();
-            if (reminderData[reminder.id]) {
-                reminderData[reminder.id].completed = completed;
-                if (completed) {
-                    reminderData[reminder.id].completedAt = new Date().toISOString();
-                } else {
-                    delete reminderData[reminder.id].completedAt;
+            let updatedData: any = null;
+            await this.plugin.updateReminderData((reminderData: any) => {
+                if (reminderData[reminder.id]) {
+                    reminderData[reminder.id].completed = completed;
+                    if (completed) {
+                        reminderData[reminder.id].completedAt = new Date().toISOString();
+                    } else {
+                        delete reminderData[reminder.id].completedAt;
+                    }
+                    updatedData = reminderData;
                 }
-                await this.plugin.saveReminderData(reminderData);
+            });
 
-                // 更新块的书签状态
-                await updateBindBlockAtrrs(this.blockId, this.plugin);
-
-                // 触发更新事件
-                window.dispatchEvent(new CustomEvent('reminderUpdated'));
-
-                // 刷新对话框
-                const container = this.dialog.element.querySelector("#blockRemindersContent") as HTMLElement;
-                const reminderIds = await getBlockReminderIds(this.blockId);
-                const reminders = reminderIds
-                    .map(id => reminderData[id])
-                    .filter(r => r);
-                await this.renderReminders(container, reminders);
-
-                showMessage(completed ? "任务已完成" : "任务已取消完成", 2000);
+            if (!updatedData || !updatedData[reminder.id]) {
+                return;
             }
+
+            // 更新块的书签状态
+            await updateBindBlockAtrrs(this.blockId, this.plugin);
+
+            // 触发更新事件
+            window.dispatchEvent(new CustomEvent('reminderUpdated'));
+
+            // 刷新对话框
+            const container = this.dialog.element.querySelector("#blockRemindersContent") as HTMLElement;
+            const reminderIds = await getBlockReminderIds(this.blockId);
+            const reminders = reminderIds
+                .map(id => updatedData[id])
+                .filter(r => r);
+            await this.renderReminders(container, reminders);
+
+            showMessage(completed ? "任务已完成" : "任务已取消完成", 2000);
         } catch (error) {
             console.error("切换任务完成状态失败:", error);
             showMessage("操作失败", 3000, "error");
@@ -553,9 +559,11 @@ export class BlockRemindersDialog {
             async () => {
                 // 用户确认删除
                 try {
-                    const reminderData = await this.plugin.loadReminderData();
-                    delete reminderData[reminder.id];
-                    await this.plugin.saveReminderData(reminderData);
+                    let updatedData: any = null;
+                    await this.plugin.updateReminderData((reminderData: any) => {
+                        delete reminderData[reminder.id];
+                        updatedData = reminderData;
+                    });
 
                     // 更新块的书签状态
                     await updateBindBlockAtrrs(this.blockId, this.plugin);
@@ -567,7 +575,7 @@ export class BlockRemindersDialog {
                     const container = this.dialog.element.querySelector("#blockRemindersContent") as HTMLElement;
                     const reminderIds = await getBlockReminderIds(this.blockId);
                     const reminders = reminderIds
-                        .map(id => reminderData[id])
+                        .map(id => updatedData[id])
                         .filter(r => r);
 
                     if (reminders.length === 0) {

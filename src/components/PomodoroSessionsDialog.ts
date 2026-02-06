@@ -665,22 +665,20 @@ export class PomodoroSessionsDialog {
      */
     private async syncReminderPomodoroCount() {
         try {
-            const reminderData = await this.plugin.loadReminderData();
-
-            if (reminderData && reminderData[this.reminderId]) {
-                const count = this.sessions.reduce((sum, s) => {
-                    if (s.type === 'work') {
-                        return sum + this.recordManager.calculateSessionCount(s);
-                    }
-                    return sum;
-                }, 0);
-
-                // 只有当数量不一致时才更新
-                if (reminderData[this.reminderId].pomodoroCount !== count) {
-                    reminderData[this.reminderId].pomodoroCount = count;
-                    await this.plugin.saveReminderData(reminderData);
+            const count = this.sessions.reduce((sum, s) => {
+                if (s.type === 'work') {
+                    return sum + this.recordManager.calculateSessionCount(s);
                 }
-            }
+                return sum;
+            }, 0);
+
+            await this.plugin.updateReminderData((reminderData: any) => {
+                if (reminderData && reminderData[this.reminderId]) {
+                    if (reminderData[this.reminderId].pomodoroCount !== count) {
+                        reminderData[this.reminderId].pomodoroCount = count;
+                    }
+                }
+            });
         } catch (error) {
             console.error("同步番茄钟数量失败:", error);
         }
