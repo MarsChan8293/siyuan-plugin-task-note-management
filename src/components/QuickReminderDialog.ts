@@ -31,15 +31,16 @@ export class QuickReminderDialog {
     private pomodoroRecordManager: PomodoroRecordManager;
     private personManager: PersonManager;
     private selectedAssigneeId: string | null = null;
-    private autoDetectDateTime?: boolean; // 是否自动识别日期时间（undefined 表示未指定，使用插件设置）
+    private autoDetectDateTime?: boolean;
     private defaultProjectId?: string;
-    private showKanbanStatus?: 'todo' | 'term' | 'none' = 'term'; // 看板状态显示模式，默认为 'term'
-    private defaultStatus?: 'short_term' | 'long_term' | 'doing' | 'todo'; // 默认任务状态
+    private showKanbanStatus?: 'todo' | 'term' | 'none' = 'term';
+    private defaultStatus?: 'short_term' | 'long_term' | 'doing' | 'todo';
     private defaultCustomGroupId?: string | null;
     private defaultMilestoneId?: string;
     private defaultCustomReminderTime?: string;
     private isTimeRange: boolean = false;
     private initialDate: string;
+;
     private initialTime?: string;
     private initialEndDate?: string;
     private initialEndTime?: string;
@@ -50,16 +51,17 @@ export class QuickReminderDialog {
     private defaultPriority?: string;
     private defaultBlockId?: string;
     private defaultParentId?: string;
-    private plugin?: any; // 插件实例
-    private customTimes: Array<{ time: string, note?: string }> = []; // 自定义提醒时间列表
-    private selectedTagIds: string[] = []; // 当前选中的标签ID列表
+    private plugin?: any;
+    private customTimes: Array<{ time: string, note?: string }> = [];
+    private selectedTagIds: string[] = [];
     private isInstanceEdit: boolean = false;
     private instanceDate?: string;
     private defaultSort?: number;
     private hideProjectSelector: boolean = false;
     private existingReminders: any[] = [];
     private selectedCategoryIds: string[] = [];
-    private currentKanbanStatuses: import('../utils/projectManager').KanbanStatus[] = []; // 当前项目的kanbanStatuses
+    private currentKanbanStatuses: import('../utils/projectManager').KanbanStatus[] = [];
+    private _reminderUpdatedListenerAdded: boolean = false;
 
 
     constructor(
@@ -182,12 +184,12 @@ export class QuickReminderDialog {
 
 
     // 加载现有提醒列表（块绑定模式）
-    private async loadExistingReminder() {
+    private async loadExistingReminder(reminderData?: any) {
         if (this.mode !== 'block' || !this.blockId) return;
 
         try {
-            const reminderData = await this.plugin.loadReminderData();
-            const blockReminders = Object.values(reminderData).filter((reminder: any) =>
+            const data = reminderData || await this.plugin.loadReminderData(true);
+            const blockReminders = Object.values(data).filter((reminder: any) =>
                 reminder.blockId === this.blockId
             ) as any[];
 
@@ -908,8 +910,6 @@ export class QuickReminderDialog {
             this.customTimes = [];
         }
 
-        const currentTime = this.initialTime;
-
         // 如果传入了blockId，尝试获取块内容作为默认标题（优先 DOM 内容；文档根直接使用块/文档标题）
         // 对于batch_edit模式，块内容已从reminder中设置
         if (this.mode !== 'batch_edit' && this.blockId) {
@@ -1214,6 +1214,12 @@ export class QuickReminderDialog {
         await this.renderProjectSelector();
         await this.renderPrioritySelector();
         await this.renderTagsSelector();
+
+        // 注册 reminderUpdated 事件监听器（块绑定模式）
+        if (this.mode === 'block' && !this._reminderUpdatedListenerAdded) {
+            window.addEventListener('reminderUpdated', this.reminderUpdatedHandler);
+            this._reminderUpdatedListenerAdded = true;
+        }
 
         // 确保日期和时间输入框正确设置初始值
         setTimeout(async () => {
@@ -2934,7 +2940,6 @@ export class QuickReminderDialog {
 
                         await this.plugin.updateReminderData((data: any) => {
                             data[reminderId] = reminder;
-                            reminderData = data;
                         });
 
                         // 如果看板状态或自定义分组发生变化，将该字段递归应用到所有子任务（包含多层子孙）
@@ -2995,8 +3000,11 @@ export class QuickReminderDialog {
                             // 持久化子任务变更（如果有）
                             if (anyChildChanged) {
                                 await this.plugin.updateReminderData((data: any) => {
-                                    Object.assign(data, reminderData);
+                                    for (const key of Object.keys(reminderData)) {
+                                        data[key] = reminderData[key];
+                                    }
                                 });
+                                reminderData = await this.plugin.loadReminderData(true);
 
                                 // 如果有绑定块需要同步 projectId，异步调用 API 处理
                                 if (changedBlockProjects.length > 0) {

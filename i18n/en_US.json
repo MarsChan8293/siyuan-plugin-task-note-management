@@ -1002,6 +1002,8 @@
     "noneVal": "None",
     "pomodoros": "Pomodoros",
     "viewPomodoros": "View Pomodoros",
+    "broadcastDelay": "Broadcast Delay (ms)",
+    "broadcastDelayDesc": "Delay time for data sync broadcast in milliseconds (default 100ms)",
     "noPomodoros": "No pomodoro records yet",
     "addPomodoro": "Add Pomodoro",
     "editPomodoro": "Edit Pomodoro",

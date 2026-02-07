@@ -61,6 +61,7 @@ export class ReminderPanel {
     private currentRemindersCache: any[] = [];
     private allRemindersMap: Map<string, any> = new Map(); // 存储所有任务的完整信息，用于计算进度
     private isLoading: boolean = false;
+    private needsReload: boolean = false; // 是否在加载期间收到了更新请求
     private loadTimeoutId: number | null = null;
 
     // 分页相关状态
@@ -103,6 +104,9 @@ export class ReminderPanel {
                         console.warn('刷新番茄钟数据失败:', e);
                     }
                     this.loadReminders();
+                } else {
+                    // 如果正在加载，标记稍后需要重新加载，确保不会丢失更新
+                    this.needsReload = true;
                 }
                 this.loadTimeoutId = null;
             }, 100);
@@ -1556,7 +1560,7 @@ export class ReminderPanel {
     private async loadReminders(force: boolean = false) {
         // 防止重复加载，但当传入 force 时强制重新加载
         if (this.isLoading && !force) {
-            // console.log('任务正在加载中，跳过本次加载请求');
+            this.needsReload = true;
             return;
         }
 
@@ -1760,6 +1764,13 @@ export class ReminderPanel {
             showMessage(i18n("loadRemindersFailed"));
         } finally {
             this.isLoading = false;
+            
+            // 如果在加载期间收到了更新请求，递归触发一次加载
+            if (this.needsReload) {
+                this.needsReload = false;
+                // 使用 setTimeout 避免深层递归调用栈溢出
+                window.setTimeout(() => this.loadReminders(true), 50);
+            }
         }
     }
     /**

@@ -67,6 +67,8 @@ export class EisenhowerMatrixView {
     };
     private isDragging: boolean = false;
     private draggedTaskId: string | null = null;
+    private isLoading: boolean = false;
+    private needsReload: boolean = false;
     private collapsedTasks: Set<string> = new Set();
 
     // 全局番茄钟管理器
@@ -210,6 +212,11 @@ export class EisenhowerMatrixView {
     }
 
     private async loadTasks(force: boolean = false) {
+        if (this.isLoading) {
+            this.needsReload = true;
+            return;
+        }
+        this.isLoading = true;
         try {
             const reminderData = await getAllReminders(this.plugin, undefined, force);
             const today = getLogicalDateString();
@@ -459,6 +466,12 @@ export class EisenhowerMatrixView {
         } catch (error) {
             console.error('加载任务失败:', error);
             showMessage(i18n('loadTasksFailed'));
+        } finally {
+            this.isLoading = false;
+            if (this.needsReload) {
+                this.needsReload = false;
+                window.setTimeout(() => this.loadTasks(true), 50);
+            }
         }
     }
 

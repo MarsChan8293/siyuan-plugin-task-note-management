@@ -46,6 +46,7 @@ export class ProjectKanbanView {
     private sortButton: HTMLButtonElement;
     private doneSortButton: HTMLButtonElement;
     private isLoading: boolean = false;
+    private needsReload: boolean = false;
     private searchKeyword: string = '';
     private searchInput: HTMLInputElement;
     private collapsedTasks: Set<string> = new Set();
@@ -4599,6 +4600,7 @@ export class ProjectKanbanView {
 
     private async loadTasks() {
         if (this.isLoading) {
+            this.needsReload = true;
             return;
         }
 
@@ -5219,6 +5221,10 @@ export class ProjectKanbanView {
             showMessage("加载任务失败");
         } finally {
             this.isLoading = false;
+            if (this.needsReload) {
+                this.needsReload = false;
+                window.setTimeout(() => this.loadTasks(), 50);
+            }
         }
     }
 

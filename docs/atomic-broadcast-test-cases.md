@@ -91,6 +91,13 @@
 3. Client A: save afterwards.
 4. Expected: last write wins; both clients refresh to last write state within ~1s.
 
+## Edge: Concurrent Task Addition to Same Project
+1. Client A: open a project.
+2. Client B: open the same project.
+3. Client A: create a new reminder "Task A" within this project.
+4. Client B: create a new reminder "Task B" within this project at the same time.
+5. Expected (A & B): Both "Task A" and "Task B" are successfully added and visible in the list on both clients within ~1s; no data loss.
+
 ## Person: Create
 1. Client A: Open Task Note Management panel -> More -> Person Management.
 2. Click "Add Person", enter "Test Person A".

@@ -1031,6 +1031,8 @@
     "syncNow": "立即同步",
     "syncingSubscription": "正在同步...",
     "subscriptionSyncCompleted": "订阅同步完成",
+    "broadcastDelay": "广播延迟时间（毫秒）",
+    "broadcastDelayDesc": "数据同步广播的延迟时间，单位毫秒，默认100ms",
     "subscriptionTaskReadOnly": "订阅任务（只读）",
     "cannotEditSubscriptionTask": "订阅的任务无法编辑，请在原日历中修改",
     "manual": "手动",

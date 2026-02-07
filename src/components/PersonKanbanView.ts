@@ -60,6 +60,7 @@ export class PersonKanbanView {
     private sortButton: HTMLButtonElement;
     private doneSortButton: HTMLButtonElement;
     private isLoading: boolean = false;
+    private needsReload: boolean = false;
     private searchKeyword: string = '';
     private searchInput: HTMLInputElement;
     private collapsedTasks: Set<string> = new Set();
@@ -173,7 +174,10 @@ export class PersonKanbanView {
     }
 
     private async loadTasks() {
-        if (this.isLoading) return;
+        if (this.isLoading) {
+            this.needsReload = true;
+            return;
+        }
         this.isLoading = true;
 
         try {
@@ -280,6 +284,10 @@ export class PersonKanbanView {
             showMessage(i18n('loadRemindersFailed') || '加载任务失败');
         } finally {
             this.isLoading = false;
+            if (this.needsReload) {
+                this.needsReload = false;
+                window.setTimeout(() => this.loadTasks(), 50);
+            }
         }
     }
 

@@ -100,6 +100,13 @@
                     title: i18n('enableHabitDockBadge'),
                     description: i18n('enableHabitDockBadgeDesc'),
                 },
+                {
+                    key: 'broadcastDelay',
+                    value: settings.broadcastDelay,
+                    type: 'number',
+                    title: i18n('broadcastDelay'),
+                    description: i18n('broadcastDelayDesc'),
+                },
             ],
         },
         {

@@ -48,6 +48,8 @@ export class ProjectPanel {
     private draggedElement: HTMLElement | null = null;
     private draggedProject: any = null;
     private currentProjectsCache: any[] = [];
+    private isLoading: boolean = false;
+    private needsReload: boolean = false;
     // 保存每个状态分组的折叠状态（key = statusId, value = boolean; true=collapsed）
     private groupCollapsedState: Record<string, boolean> = {};
     // 缓存提醒数据，避免为每个项目重复读取
@@ -61,10 +63,18 @@ export class ProjectPanel {
         this.personManager = PersonManager.getInstance(this.plugin);
 
         this.projectUpdatedHandler = () => {
+            if (this.isLoading) {
+                this.needsReload = true;
+                return;
+            }
             this.loadProjects();
         };
 
         this.reminderUpdatedHandler = async (e: any) => {
+            if (this.isLoading) {
+                this.needsReload = true;
+                return;
+            }
             // 清空提醒缓存并重新加载计数
             this.reminderDataCache = null;
 
@@ -581,6 +591,11 @@ export class ProjectPanel {
     }
 
     private async loadProjects() {
+        if (this.isLoading) {
+            this.needsReload = true;
+            return;
+        }
+        this.isLoading = true;
         try {
             const projectData = await this.plugin.loadProjectData();
 
@@ -661,6 +676,12 @@ export class ProjectPanel {
         } catch (error) {
             console.error('加载项目失败:', error);
             showMessage("加载项目失败");
+        } finally {
+            this.isLoading = false;
+            if (this.needsReload) {
+                this.needsReload = false;
+                window.setTimeout(() => this.loadProjects(), 50);
+            }
         }
     }
 
