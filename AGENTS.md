@@ -1,17 +1,17 @@
-# AGENTS.md - SiYuan Task Note Management Plugin
+# AGENTS.md - Siyuan Task Note Management Plugin
 
 ## Build Commands
 
 - `npm run dev` - Development build with hot reload and inline sourcemaps (auto-copies to SiYuan)
 - `npm run build` - Production build (outputs to `dist/` and creates `package.zip`)
 - `npm run make-link` - Create symbolic link to SiYuan plugins directory (Linux/macOS)
-- `npm run make-link-win` - Create symbolic link to SiYuan plugins directory (Windows)
+- `npm run make-link-win` - Create symbolic link to SiYuan plugins directory (via PowerShell elevation)
 - `npm run make-install` - Build and install plugin to SiYuan
 - `npm run update-version` - Update plugin version
 
 ## Testing
 
-**No automated test framework exists.** Test changes manually:
+**NO automated tests exist.** Test changes manually:
 1. Run `npm run dev` to build with hot reload
 2. Copy `dev/` directory to SiYuan plugins directory: `/siyuan/workspace/data/plugins/siyuan-plugin-task-note-management/`
 3. Refresh plugin in SiYuan: Settings → Plugins → Disable → Enable
@@ -21,8 +21,6 @@
 
 ## Docker Deployment
 
-When using Docker environment, the plugin files should be copied to the container:
-
 ```bash
 # Build the plugin
 NODE_ENV=development npx vite build
@@ -30,9 +28,6 @@ NODE_ENV=development npx vite build
 # Copy to SiYuan container (adjust container name as needed)
 docker exec siyuan rm -rf /siyuan/workspace/data/plugins/siyuan-plugin-task-note-management/*
 docker cp dev/. siyuan:/siyuan/workspace/data/plugins/siyuan-plugin-task-note-management/
-
-# Verify files were copied
-docker exec siyuan ls -la /siyuan/workspace/data/plugins/siyuan-plugin-task-note-management/
 ```
 
 ## Code Style Guidelines
@@ -51,63 +46,36 @@ Always include copyright headers in TS/Svelte files:
 ```
 
 ### TypeScript Conventions
+**Naming:** Classes: PascalCase, Functions: camelCase, Constants: UPPER_SNAKE_CASE, Private: `_prefix`
 
-**Naming:**
-- Classes: PascalCase (`ReminderDialog`, `ProjectPanel`)
-- Functions/methods: camelCase (`loadSettings`, `createDocWithMd`)
-- Constants: UPPER_SNAKE_CASE (`STORAGE_NAME`, `TAB_TYPE`)
-- Private members: `_underscore` prefix or private modifier
+**Imports:** Use `@/` alias for src imports, group: siyuan API → internal → third-party
 
-**Imports:**
-- Use `@/` alias for src imports: `import { i18n } from '@/pluginInstance'`
-- Group imports: siyuan API, internal imports, then third-party
-- Absolute imports preferred over relative
+**Formatting:** 2-space indentation, prefer `const`, async/await, descriptive names (Chinese comments allowed)
 
-**Formatting:**
-- 2-space indentation (check existing code)
-- No comments unless necessary
-- Prefer `const` over `let`
-- Use async/await for async operations
-- Descriptive variable names (Chinese comments allowed)
+**Types:** Always use TypeScript (avoid `any`), define interfaces in `src/types/`, use SiYuan API types
 
-**Types:**
-- Always use TypeScript types (avoid `any`)
-- Define interfaces in `src/types/`
-- Leverage SiYuan API types from `siyuan` package
-- Use strict mode not enabled, but `noUnusedLocals` and `noUnusedParameters` are
-
-**Error Handling:**
-- Always try-catch async operations
-- Use `showMessage()` from `siyuan` for user feedback
-- Log detailed errors to console
-- Show user-friendly messages via `i18n()` translations
+**Error Handling:** Try-catch async operations, `showMessage()` for user feedback, log errors, use `i18n()` translations
 
 ### Svelte Conventions
-
-- Use `<script lang="ts">` for TypeScript support
-- Reactive declarations with `$:` for computed values
-- Proper lifecycle: `onMount`, `onDestroy`
-- Keep components focused and single-responsibility
+- `<script lang="ts">` for TypeScript support
+- Reactive declarations: `$:`
+- Lifecycle: `onMount`, `onDestroy`
 - Props: `export let variableName`
 - Events: `createEventDispatcher()`
 
 ### Internationalization (Critical)
-
-**Always support both English and Chinese:**
-1. Use `i18n()` function from `src/pluginInstance.ts` for all UI strings
+1. Use `i18n()` from `src/pluginInstance.ts` for all UI strings
 2. Add translations to `i18n/en_US.json` and `i18n/zh_CN.json`
 3. Translation keys: descriptive camelCase
 4. Example: `showMessage(i18n("taskCreatedSuccessfully"))`
 
 ### SiYuan API Integration
-
 **Common operations (from `src/api.ts`):**
 - `createDocWithMd()` - Create documents with Markdown
 - `getBlock()` - Get block by ID
 - `updateBlock()` - Update block content
 - `setBlockAttrs()` - Set block attributes
-- `pushMsg()` - Show success message
-- `pushErrMsg()` - Show error message
+- `pushMsg()` / `pushErrMsg()` - Show messages
 
 **Block references:**
 - Block IDs: 22-character strings
@@ -116,21 +84,13 @@ Always include copyright headers in TS/Svelte files:
 - Document operations use notebook IDs + paths
 
 ### Data Management
+**Storage files:** `reminder-settings.json`, `reminder.json`, `project.json`, `categories.json`, `persons.json`, `habit.json`, `pomodoro_record.json`
 
-**Storage files:**
-- `reminder-settings.json` - Plugin settings
-- `reminder.json` - Reminder data
-- `project.json` - Project data
-- `categories.json` - Categories
-- `persons.json` - Persons (assignees)
-- `habit.json` - Habits
-- `pomodoro_record.json` - Pomodoro stats
-- Use `plugin.loadData(STORAGE_NAME)` and `plugin.saveData(data, STORAGE_NAME)`
+Use `plugin.loadData(STORAGE_NAME)` and `plugin.saveData(data, STORAGE_NAME)`
 
-**Date/Time:**
-- Format: `YYYY-MM-DD HH:mm` (local time)
-- Use `chrono-node` for natural language parsing ("tomorrow at 3pm")
-- Helpers in `src/utils/dateUtils.ts`: `getLocalDateString()`, `getLocalTimeString()`, `compareDateStrings()`
+**Date/Time:** Format: `YYYY-MM-DD HH:mm`, use `chrono-node` for natural language parsing
+
+**Helpers in `src/utils/dateUtils.ts`:** `getLocalDateString()`, `getLocalTimeString()`, `compareDateStrings()`
 
 ## Project Structure
 
@@ -196,109 +156,3 @@ this.addTab({
 - chrono-node (date parsing)
 - ECharts (charts)
 - SASS (styles)
-
-## Person/Assignee Management Feature
-
-### Overview
-The plugin now includes a complete person/assignee management system for assigning responsibilities to tasks and projects.
-
-### Implementation
-
-**Core Components:**
-- `src/types/person.ts` - Person type definition
-- `src/utils/personManager.ts` - PersonManager class (singleton pattern)
-- `src/components/PersonManageDialog.ts` - Person management UI
-- `src/components/PersonSelectDialog.ts` - Person selection UI
-
-**Integration Points:**
-- `src/components/QuickReminderDialog.ts` - Task creation/editing with assignee selection
-- `src/components/ReminderPanel.ts` - "更多" menu with "责任人管理" entry
-- `src/index.ts` - persons.json storage support and caching
-- `src/types/reminder.ts` - ReminderItem.assigneeId field
-- `src/utils/projectManager.ts` - Project.assigneeId field
-
-### Data Structure
-
-**persons.json:**
-```json
-[
-  {
-    "id": "person_1234567890_abc",
-    "name": "张三",
-    "createdAt": "2024-02-01T12:00:00.000Z"
-  }
-]
-```
-
-**Task with assignee:**
-```json
-{
-  "id": "reminder_id",
-  "title": "完成项目文档",
-  "assigneeId": "person_1234567890_abc",
-  // ... other fields
-}
-```
-
-**Project with assignee:**
-```json
-{
-  "id": "project_id",
-  "name": "网站重构",
-  "assigneeId": "person_1234567890_abc",
-  // ... other fields
-}
-```
-
-### Usage
-
-**Managing Persons:**
-1. Open Reminder Panel in SiYuan
-2. Click "更多" (More) button
-3. Select "责任人管理" (Person Management)
-4. Add/Edit/Delete persons
-
-**Assigning Persons to Tasks:**
-1. Create or edit a task
-2. Click "选择责任人" (Select Assignee) button
-3. Select a person or choose "无责任人" (No Assignee)
-4. Save the task
-
-### API
-
-**PersonManager Methods:**
-- `getInstance(plugin)` - Get singleton instance
-- `initialize()` - Initialize and load data
-- `getPersons()` - Get all persons
-- `getPersonById(id)` - Get person by ID
-- `getPersonName(id)` - Get person name by ID
-- `addPerson(name)` - Add new person
-- `updatePerson(id, updates)` - Update person
-- `deletePerson(id)` - Delete person
-- `checkPersonInUse(personId)` - Check if person is assigned to tasks/projects
-
-### Translations
-
-Added keys to `i18n/en_US.json` and `i18n/zh_CN.json`:
-- `personManagement` - Person Management / 责任人管理
-- `addPerson` - Add Person / 添加责任人
-- `editPerson` - Edit Person / 编辑责任人
-- `deletePerson` - Delete Person / 删除责任人
-- `personName` - Person Name / 责任人姓名
-- `assignee` - Assignee / 责任人
-- `selectAssignee` - Select Assignee / 选择责任人
-- `noAssignee` - No Assignee / 无责任人
-- `personCreatedSuccessfully` - Person created successfully / 责任人创建成功
-- `personUpdatedSuccessfully` - Person updated successfully / 贴任人更新成功
-- `personDeletedSuccessfully` - Person deleted successfully / 责任人删除成功
-- `personNameRequired` - Person name is required / 责任人姓名不能为空
-- `confirmDeletePerson` - Are you sure you want to delete this person? / 确定要删除此责任人吗？
-- `personInUseWarning` - This person is assigned to {0} task(s) and {1} project(s). Please unassign them first. / 该责任人已被分配给{0}个任务和{1}个项目，请先解除分配。
-
-### Future Enhancements
-
-- Display assignee name in ReminderPanel task cards
-- Display assignee name in ProjectKanbanView task cards
-- Display assignee name in ProjectPanel project cards
-- Add assignee selection to ProjectDialog
-- Add search/filter functionality to PersonManageDialog
