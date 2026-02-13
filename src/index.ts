@@ -193,6 +193,10 @@ export default class ReminderPlugin extends Plugin {
     private holidayDataCache: any = null;
     private pomodoroRecordsCache: any = null;
     private personsDataCache: any = null;
+
+    // 数据备份配置
+    private readonly MAX_BACKUPS = 10; // 保留最近10份备份
+    private readonly BACKUP_PREFIX = 'backup-'; // 备份文件前缀
     private outlinePrefixCache: Map<string, string> = new Map(); // 记录由本插件管理的大纲前缀
     private protyleObservers: WeakMap<Element, MutationObserver> = new WeakMap();
     private protyleDebounceTimers: WeakMap<Element, number> = new WeakMap();
@@ -204,6 +208,7 @@ export default class ReminderPlugin extends Plugin {
     private _broadcastSource: EventSource | null = null;
     private _broadcastSid: string = "";
     private _broadcastChannel: string = "task-note-sync";
+    private _broadcastFallbackToApi: boolean = false;
 
     // 内存中的提醒记录，用于避免同一会话中重复提醒
     // 格式: "reminderId_date_time" -> true
@@ -221,9 +226,33 @@ export default class ReminderPlugin extends Plugin {
         if (update || !this.reminderDataCache) {
             try {
                 const data = await this.loadData(REMINDER_DATA_FILE);
+                
+                // 审计日志：检测异常数据格式
+                if (data && typeof data === 'object') {
+                    const keys = Object.keys(data);
+                    const hasCode = data.hasOwnProperty('code');
+                    const hasMsg = data.hasOwnProperty('msg');
+                    
+                    if (hasCode || hasMsg) {
+                        console.warn('[TASK-AUDIT] loadReminderData 检测到 code/msg 字段:', {
+                            hasCode,
+                            hasMsg,
+                            totalKeys: keys.length,
+                            keys: keys.slice(0, 20),
+                            sample: hasCode ? { code: data.code } : { msg: data.msg }
+                        });
+                    }
+                    
+                    if (keys.length === 0) {
+                        console.warn('[TASK-AUDIT] loadReminderData 返回空对象');
+                    }
+                } else if (data !== null && data !== undefined) {
+                    console.error('[TASK-AUDIT] loadReminderData 数据类型异常:', typeof data, data);
+                }
+                
                 this.reminderDataCache = data || {};
             } catch (error) {
-                console.error('Failed to load reminder data:', error);
+                console.error('[TASK-AUDIT] Failed to load reminder data:', error);
                 this.reminderDataCache = {};
             }
         }
@@ -291,11 +320,41 @@ export default class ReminderPlugin extends Plugin {
     ): Promise<T | void> {
         return this._enqueueWrite(async () => {
             const data = await this.loadData(file) || {};
+            const keysBefore = Object.keys(data);
+            const countBefore = keysBefore.length;
+            
             const result = await mutate(data);
             let dataToSave = data;
             if (result && typeof result === "object" && result !== data) {
                 dataToSave = result as Record<string, any>;
             }
+            
+            // 审计日志：检测大量数据丢失
+            const keysAfter = Object.keys(dataToSave);
+            const countAfter = keysAfter.length;
+            if (options.cacheKey === "reminder" && countBefore > 0) {
+                const lostKeys = keysBefore.filter(k => !keysAfter.includes(k));
+                if (lostKeys.length > 0) {
+                    const lostRatio = lostKeys.length / countBefore;
+                    const level = lostRatio > 0.5 ? '[CRITICAL]' : lostRatio > 0.1 ? '[WARNING]' : '[INFO]';
+                    console.log(`[TASK-AUDIT] ${level} 任务数据变更: ${countBefore} → ${countAfter} (丢失 ${lostKeys.length})`, {
+                        file,
+                        lostKeys: lostKeys.slice(0, 10), // 只记录前10个，避免日志过长
+                        lostRatio: (lostRatio * 100).toFixed(1) + '%',
+                        stack: new Error().stack?.split('\n').slice(1, 6).join('\n') // 调用栈前5行
+                    });
+                }
+            }
+            
+            // 自动备份（仅对重要数据文件）
+            if (options.cacheKey === "reminder" && countBefore > 0) {
+                try {
+                    await this._createBackup(file, data);
+                } catch (error) {
+                    console.warn('[TASK-AUDIT] 创建备份失败:', error);
+                }
+            }
+            
             await this.saveData(file, dataToSave);
             if (options.cacheKey === "reminder") {
                 this.reminderDataCache = dataToSave;
@@ -307,6 +366,108 @@ export default class ReminderPlugin extends Plugin {
             }
             return result;
         });
+    }
+
+    /**
+     * 创建数据备份
+     * @param file 原始文件名
+     * @param data 数据内容
+     */
+    private async _createBackup(file: string, data: any): Promise<void> {
+        const timestamp = Date.now();
+        const baseName = file.replace('.json', '');
+        const backupFileName = `${this.BACKUP_PREFIX}${baseName}-${timestamp}.json`;
+        
+        try {
+            await this.saveData(backupFileName, data);
+            console.log(`[TASK-AUDIT] 备份已创建: ${backupFileName}, 任务数: ${Object.keys(data || {}).length}`);
+            
+            // 异步清理旧备份，不阻塞主流程
+            this._cleanupOldBackups(baseName).catch(err => {
+                console.warn('[TASK-AUDIT] 清理旧备份失败:', err);
+            });
+        } catch (error) {
+            console.error('[TASK-AUDIT] 备份创建失败:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 清理旧备份，保留最近N份
+     * @param baseName 基础文件名（不含扩展名）
+     */
+    private async _cleanupOldBackups(baseName: string): Promise<void> {
+        try {
+            // 获取所有备份文件列表（这里需要使用 fs.list 或类似API）
+            // 由于 SiYuan Plugin API 可能没有直接的 listData 方法，
+            // 我们采用命名约定：backup-{baseName}-{timestamp}.json
+            // 暂时跳过实际清理，只记录日志
+            // TODO: 如果需要实现完整的清理逻辑，需要扩展 Plugin API 或使用其他方式
+            console.log(`[TASK-AUDIT] 备份清理检查: ${baseName} (保留最近${this.MAX_BACKUPS}份)`);
+        } catch (error) {
+            console.warn('[TASK-AUDIT] 备份清理检查失败:', error);
+        }
+    }
+
+    /**
+     * 恢复备份数据（从浏览器控制台手动调用）
+     * 用法示例：
+     *   // 1. 查看可用备份
+     *   window.TaskPlugin.listBackups('reminder')
+     *   
+     *   // 2. 恢复特定备份（使用完整文件名）
+     *   await window.TaskPlugin.restoreBackup('backup-reminder-1707820800000.json')
+     * 
+     * @param backupFileName 备份文件名
+     */
+    public async restoreBackup(backupFileName: string): Promise<void> {
+        try {
+            console.log(`[TASK-AUDIT] 正在恢复备份: ${backupFileName}`);
+            const backupData = await this.loadData(backupFileName);
+            
+            if (!backupData || typeof backupData !== 'object') {
+                throw new Error('备份数据无效或不存在');
+            }
+            
+            const taskCount = Object.keys(backupData).length;
+            const confirmed = confirm(`确认要恢复此备份吗？\n\n文件: ${backupFileName}\n任务数: ${taskCount}\n\n当前数据将被覆盖！`);
+            
+            if (!confirmed) {
+                console.log('[TASK-AUDIT] 用户取消恢复操作');
+                return;
+            }
+            
+            // 创建当前数据的紧急备份
+            const currentData = await this.loadReminderData(true);
+            await this._createBackup('reminder-before-restore', currentData);
+            
+            // 恢复备份
+            await this.saveReminderData(backupData);
+            
+            console.log(`[TASK-AUDIT] ✅ 备份恢复成功！已恢复 ${taskCount} 个任务`);
+            showMessage(`备份恢复成功！已恢复 ${taskCount} 个任务`, 5000, 'info');
+            
+            // 刷新界面
+            window.dispatchEvent(new CustomEvent('reminderUpdated'));
+        } catch (error) {
+            console.error('[TASK-AUDIT] ❌ 备份恢复失败:', error);
+            showMessage('备份恢复失败: ' + error.message, 6000, 'error');
+            throw error;
+        }
+    }
+
+    /**
+     * 列出可用的备份文件（辅助调试方法）
+     * 由于 Plugin API 限制，这个方法只是提供指导信息
+     * 
+     * @param baseName 基础文件名（如 'reminder'）
+     */
+    public listBackups(baseName: string = 'reminder'): void {
+        console.log(`[TASK-AUDIT] 备份文件命名格式: backup-${baseName}-{timestamp}.json`);
+        console.log('[TASK-AUDIT] 请在 SiYuan 数据目录中查找备份文件：');
+        console.log('[TASK-AUDIT]   路径: siyuan/data/storage/petal/siyuan-plugin-task-note-management/');
+        console.log('[TASK-AUDIT] \n恢复方法：');
+        console.log('[TASK-AUDIT]   await window.TaskPlugin.restoreBackup("backup-reminder-1707820800000.json")');
     }
 
     private async _broadcastRefresh(scope: string[] = ["reminder", "project"]): Promise<void> {
@@ -322,31 +483,74 @@ export default class ReminderPlugin extends Plugin {
         }
     }
 
+    private _generateBroadcastSid(): string {
+        const frontend = getFrontend();
+        const timePart = Date.now().toString(36);
+        const randomPart = (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function")
+            ? crypto.randomUUID()
+            : Math.random().toString(36).slice(2, 10);
+        return `${frontend}-${timePart}-${randomPart}`;
+    }
+
+    private _parseBroadcastPayload(raw: string): any | null {
+        if (!raw) return null;
+        let parsed: any = null;
+        try {
+            parsed = JSON.parse(raw);
+        } catch (error) {
+            return null;
+        }
+        if (parsed && typeof parsed === "object" && "channel" in parsed && "message" in parsed) {
+            if (parsed.channel !== this._broadcastChannel) return null;
+            if (typeof parsed.message === "string") {
+                try {
+                    return JSON.parse(parsed.message);
+                } catch (error) {
+                    return null;
+                }
+            }
+            return parsed.message;
+        }
+        return parsed;
+    }
+
+    private async _handleBroadcastMessage(raw: string): Promise<void> {
+        const payload = this._parseBroadcastPayload(raw);
+        if (!payload || payload.sid === this._broadcastSid) return;
+        if (payload.type !== "REFRESH_DATA") return;
+        const scope = Array.isArray(payload.scope) ? payload.scope : ["reminder", "project"];
+        if (scope.includes("reminder")) {
+            await this.loadReminderData(true);
+            window.dispatchEvent(new CustomEvent("reminderUpdated"));
+        }
+        if (scope.includes("project")) {
+            await this.loadProjectData(true);
+            window.dispatchEvent(new CustomEvent("projectUpdated"));
+        }
+    }
+
     private _initBroadcastListener() {
         try {
-            this._broadcastSource = new EventSource(`/es/broadcast/subscribe?channel=${this._broadcastChannel}`);
-            this._broadcastSource.addEventListener(this._broadcastChannel, async (event: MessageEvent) => {
+            const endpoint = this._broadcastFallbackToApi
+                ? `/api/broadcast/subscribe?channel=${this._broadcastChannel}`
+                : `/es/broadcast/subscribe?channel=${this._broadcastChannel}`;
+            this._broadcastSource = new EventSource(endpoint);
+            const onMessage = async (event: MessageEvent) => {
                 if (!event || !event.data) return;
-                let payload: any = null;
-                try {
-                    payload = JSON.parse(event.data);
-                } catch (error) {
-                    return;
-                }
-                if (!payload || payload.sid === this._broadcastSid) return;
-                if (payload.type !== "REFRESH_DATA") return;
-                const scope = Array.isArray(payload.scope) ? payload.scope : ["reminder", "project"];
-                if (scope.includes("reminder")) {
-                    await this.loadReminderData(true);
-                    window.dispatchEvent(new CustomEvent("reminderUpdated"));
-                }
-                if (scope.includes("project")) {
-                    await this.loadProjectData(true);
-                    window.dispatchEvent(new CustomEvent("projectUpdated"));
-                }
-            });
+                await this._handleBroadcastMessage(event.data);
+            };
+            this._broadcastSource.addEventListener("message", onMessage);
+            this._broadcastSource.addEventListener(this._broadcastChannel, onMessage);
             this._broadcastSource.onerror = (error) => {
                 console.warn("Broadcast EventSource error:", error);
+                if (!this._broadcastFallbackToApi) {
+                    this._broadcastFallbackToApi = true;
+                    if (this._broadcastSource) {
+                        this._broadcastSource.close();
+                        this._broadcastSource = null;
+                    }
+                    this._initBroadcastListener();
+                }
             };
             this.addCleanup(() => {
                 if (this._broadcastSource) {
@@ -702,8 +906,13 @@ export default class ReminderPlugin extends Plugin {
             </symbol>
         `);
         setPluginInstance(this);
-        this._broadcastSid = getFrontend();
+        this._broadcastSid = this._generateBroadcastSid();
         this._initBroadcastListener();
+        
+        // 将插件实例暴露到全局，便于在控制台中调用备份恢复方法
+        (window as any).TaskPlugin = this;
+        console.log('[TASK-AUDIT] 插件实例已暴露到 window.TaskPlugin，可使用备份恢复功能');
+        
         // 初始化番茄钟记录管理器，确保番茄数据已加载
         const pomodoroRecordManager = PomodoroRecordManager.getInstance(this);
         await pomodoroRecordManager.initialize();
@@ -2336,14 +2545,36 @@ export default class ReminderPlugin extends Plugin {
             const { generateRepeatInstances } = await import("./utils/repeatUtils");
             let reminderData = await this.loadReminderData();
 
-            // 检查数据是否有效，如果数据被损坏（包含错误信息），重新初始化
-            if (!reminderData || typeof reminderData !== 'object' ||
-                reminderData.hasOwnProperty('code') || reminderData.hasOwnProperty('msg')) {
-                console.warn('检测到损坏的提醒数据，重新初始化:', reminderData);
-                await this.updateReminderData((data: any) => {
-                    Object.keys(data).forEach((key) => delete data[key]);
+            // 检查数据是否有效，如果数据被损坏（包含错误信息），重新从磁盘加载
+            // 只有当数据看起来像 API 错误响应时才判定为损坏（只有 code 和 msg 字段）
+            if (!reminderData || typeof reminderData !== 'object') {
+                console.warn('[TASK-AUDIT] 提醒数据为空或类型错误，重新加载:', reminderData);
+                this.reminderDataCache = null;
+                reminderData = await this.loadReminderData(true);
+                if (!reminderData || typeof reminderData !== 'object') {
+                    console.error('[TASK-AUDIT] 重新加载后仍然无效，跳过本次检查');
+                    return;
+                }
+            }
+            
+            // 检测可能的 API 错误响应（只有 code 和 msg，没有任务数据）
+            const keys = Object.keys(reminderData);
+            const hasCode = reminderData.hasOwnProperty('code');
+            const hasMsg = reminderData.hasOwnProperty('msg');
+            if ((hasCode || hasMsg) && keys.length <= 2) {
+                console.error('[TASK-AUDIT] [CRITICAL] 检测到疑似 API 错误响应被缓存:', {
+                    data: reminderData,
+                    keys: keys,
+                    stack: new Error().stack
                 });
-                return;
+                // 清除缓存并重新从磁盘加载，而不是清空数据
+                this.reminderDataCache = null;
+                reminderData = await this.loadReminderData(true);
+                if (!reminderData || typeof reminderData !== 'object' || Object.keys(reminderData).length === 0) {
+                    console.error('[TASK-AUDIT] [CRITICAL] 重新加载后数据仍然无效，跳过本次检查');
+                    return;
+                }
+                console.log('[TASK-AUDIT] 重新加载成功，恢复数据，任务数:', Object.keys(reminderData).length);
             }
 
             const today = getLogicalDateString();

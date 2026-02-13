@@ -238,9 +238,30 @@ export async function saveReminders(plugin: any, allReminders: any): Promise<voi
             }
         });
 
-        // Save local reminders
+        // Save local reminders（使用智能增量更新）
         await plugin.updateReminderData((data: any) => {
-            Object.keys(data).forEach((key) => delete data[key]);
+            // 审计日志：检测即将被覆盖丢失的任务
+            const existingKeys = Object.keys(data);
+            const newKeys = Object.keys(localReminders);
+            const lostKeys = existingKeys.filter(k => !newKeys.includes(k));
+            const addedKeys = newKeys.filter(k => !existingKeys.includes(k));
+            const modifiedKeys = newKeys.filter(k => existingKeys.includes(k));
+            
+            if (lostKeys.length > 0 || addedKeys.length > 0) {
+                const lostRatio = lostKeys.length / (existingKeys.length || 1);
+                const level = lostRatio > 0.5 ? '[CRITICAL]' : lostRatio > 0.1 ? '[WARNING]' : '[INFO]';
+                console.log(`[TASK-AUDIT] ${level} saveReminders 增量更新: +${addedKeys.length} ~${modifiedKeys.length} -${lostKeys.length}`, {
+                    lostKeys: lostKeys.slice(0, 10),
+                    addedKeys: addedKeys.slice(0, 5),
+                    lostRatio: (lostRatio * 100).toFixed(1) + '%',
+                    stack: new Error().stack?.split('\n').slice(1, 6).join('\n')
+                });
+            }
+            
+            // 智能增量更新：删除不存在的，更新/添加新的
+            // 删除在磁盘上但不在传入数据中的任务（真正被删除的）
+            lostKeys.forEach(key => delete data[key]);
+            // 更新或添加新任务
             Object.assign(data, localReminders);
         });
 

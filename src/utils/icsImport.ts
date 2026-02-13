@@ -443,10 +443,10 @@ export async function importIcsFile(
         // 3. 合并导入的事件
         const { merged, stats } = mergeImportedEvents(existingReminders, events, options);
 
-        // 4. 保存合并后的数据
-        await plugin.saveData('reminder.json', merged);
+        // 4. 保存合并后的数据（使用安全路径：写队列 + 缓存更新 + 广播）
+        await plugin.saveReminderData(merged);
 
-        // 5. 触发更新事件
+        // 5. 触发更新事件（saveReminderData 已通过广播触发，此处保留以兼容）
         window.dispatchEvent(new CustomEvent('reminderUpdated'));
 
         await pushMsg(`ICS导入成功：新增 ${stats.added} 个，更新 ${stats.updated} 个，共 ${stats.total} 个事件`);
